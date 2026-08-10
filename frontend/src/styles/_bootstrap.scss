@@ -1,0 +1,20 @@
+@use 'variables' as vars;
+
+// Configure Bootstrap at compile time from the template's brand tokens.
+@use 'bootstrap/scss/bootstrap' with (
+  $primary: vars.$brand-primary,
+  $secondary: vars.$brand-secondary,
+  $body-bg: vars.$app-background,
+  $body-color: vars.$app-text-color,
+  $border-color: vars.$app-border,
+  $border-radius: vars.$app-border-radius,
+  $border-radius-sm: vars.$app-border-radius * 0.75,
+  $border-radius-lg: vars.$app-border-radius * 1.25,
+  $font-family-sans-serif: vars.$app-font-family,
+  $spacer: vars.$spacer,
+  $box-shadow-sm: vars.$app-shadow,
+  $focus-ring-color: rgba(vars.$brand-primary, .2),
+  $input-btn-focus-box-shadow: 0 0 0 .2rem rgba(vars.$brand-primary, .14),
+  $link-color: vars.$brand-primary,
+  $link-hover-color: vars.$brand-primary-hover
+);

@@ -1,0 +1,58 @@
+@use 'variables' as vars;
+
+:root {
+  --color-primary: #{vars.$brand-primary};
+  --color-primary-hover: #{vars.$brand-primary-hover};
+  --color-background: #{vars.$app-background};
+  --color-surface: #{vars.$app-surface};
+  --color-border: #{vars.$app-border};
+  --color-text: #{vars.$app-text-color};
+  --color-text-muted: #{vars.$app-text-muted};
+  --color-sidebar: #{vars.$sidebar-background};
+  --color-success: #{vars.$app-success};
+  --color-warning: #{vars.$app-warning};
+  --color-danger: #{vars.$app-danger};
+  --app-background: var(--color-background);
+  --app-sidebar-background: var(--color-sidebar);
+  --app-border-radius: #{vars.$app-border-radius};
+  --app-font-family: #{vars.$app-font-family};
+  --app-shadow: #{vars.$app-shadow};
+  --sidebar-width: #{vars.$sidebar-width};
+  --sidebar-collapsed-width: #{vars.$sidebar-collapsed-width};
+  --header-height: #{vars.$header-height};
+}
+
+* { box-sizing: border-box; }
+html { background: var(--color-background); }
+body { min-height: 100vh; margin: 0; color: var(--color-text); background: var(--color-background); font-family: var(--app-font-family); font-size: .9375rem; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, h4, h5, h6 { color: #1d1f25; font-weight: 650; letter-spacing: -.018em; }
+a, button, input, select { transition: color .15s ease, background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+.card { --bs-card-border-color: var(--color-border); --bs-card-border-radius: var(--app-border-radius); border: 1px solid var(--color-border) !important; box-shadow: var(--app-shadow) !important; }
+.card-header, .card-footer { border-color: var(--color-border); }
+.card-header { font-weight: 600; }
+
+.btn { --bs-btn-border-radius: .5rem; font-weight: 560; letter-spacing: -.005em; }
+.btn-primary { --bs-btn-bg: var(--color-primary); --bs-btn-border-color: var(--color-primary); --bs-btn-hover-bg: var(--color-primary-hover); --bs-btn-hover-border-color: var(--color-primary-hover); }
+.btn-light { --bs-btn-bg: transparent; --bs-btn-border-color: transparent; --bs-btn-hover-bg: #f0f1f4; --bs-btn-hover-border-color: #f0f1f4; }
+
+.form-label { margin-bottom: .4rem; color: #414651; font-size: .8125rem; font-weight: 600; }
+.form-control, .form-select { min-height: 2.55rem; border-color: #dfe2e8; border-radius: .5rem; background-color: var(--color-surface); font-size: .9rem; }
+.form-control:hover, .form-select:hover { border-color: #c9cdd6; }
+.form-control:focus, .form-select:focus { border-color: var(--color-primary); box-shadow: 0 0 0 .2rem rgb(91 91 214 / 12%); }
+.form-control.is-invalid { box-shadow: none; }
+
+.table { --bs-table-bg: transparent; --bs-table-hover-bg: #fafafd; margin: 0; color: var(--color-text); }
+.table > :not(caption) > * > * { padding: .85rem 1rem; border-bottom-color: #eef0f3; }
+.table thead th { color: var(--color-text-muted); background: #fafbfc !important; border-bottom-width: 1px; font-size: .72rem; font-weight: 650; letter-spacing: .035em; text-transform: uppercase; white-space: nowrap; }
+.table tbody tr:last-child td { border-bottom: 0; }
+.badge { padding: .38em .65em; font-weight: 600; letter-spacing: .01em; }
+.pagination { --bs-pagination-border-color: transparent; --bs-pagination-hover-bg: #f0f1f4; --bs-pagination-active-bg: var(--color-primary); gap: .2rem; }
+.page-link { border-radius: .4rem !important; }
+.dropdown-menu { --bs-dropdown-border-color: var(--color-border); --bs-dropdown-border-radius: .6rem; --bs-dropdown-link-hover-bg: #f5f5f8; padding: .35rem; box-shadow: 0 12px 30px rgb(16 24 40 / 10%) !important; }
+.dropdown-item { border-radius: .4rem; font-size: .875rem; }
+.text-body-secondary { color: var(--color-text-muted) !important; }
+
+@media (max-width: 575.98px) { body { font-size: .9rem; } .table > :not(caption) > * > * { padding: .75rem; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }

@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "PostgreSQL (Docker)",
+      "Group": "Template",
+      "Host": "${POSTGRES_HOST}",
+      "Port": ${POSTGRES_PORT},
+      "MaintenanceDB": "${POSTGRES_DB}",
+      "Username": "${POSTGRES_USER}",
+      "SSLMode": "prefer"
+    }
+  }
+}

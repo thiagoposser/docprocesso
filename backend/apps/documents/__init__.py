@@ -1,0 +1,1 @@
+"""Reusable document management application."""

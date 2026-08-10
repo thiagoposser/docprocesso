@@ -1,0 +1,22 @@
+// Brand tokens: change this file to customize projects derived from the template.
+$brand-primary: #5b5bd6;
+$brand-primary-hover: #4f4fc4;
+$brand-secondary: #667085;
+$app-background: #f7f8fa;
+$app-surface: #ffffff;
+$app-border: #e7e9ee;
+$sidebar-background: #111318;
+$app-border-radius: 0.625rem;
+$app-font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+// Additional application tokens shared by Bootstrap and the global theme.
+$app-text-color: #24262d;
+$app-text-muted: #717784;
+$app-success: #16875d;
+$app-warning: #b26a00;
+$app-danger: #c53b4a;
+$app-shadow: 0 1px 2px rgb(16 24 40 / 4%), 0 3px 10px rgb(16 24 40 / 3%);
+$spacer: 1rem;
+$sidebar-width: 15.5rem;
+$sidebar-collapsed-width: 4.25rem;
+$header-height: 3.75rem;

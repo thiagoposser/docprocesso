@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+**/.venv
+**/__pycache__
+**/*.py[cod]
+frontend/node_modules
+frontend/dist
+frontend/.angular
+backend/staticfiles
+*.log
+docs

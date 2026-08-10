@@ -1,0 +1,90 @@
+import uuid
+from pathlib import Path
+
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
+from django.db import models
+from django.utils import timezone
+from django.utils.text import slugify
+
+
+def document_upload_path(instance, filename):
+    """Never expose a user-provided filename in storage paths."""
+    extension = Path(filename).suffix.lower()
+    uploaded_at = instance.created_at or timezone.now()
+    return f"documents/{uploaded_at:%Y/%m}/{uuid.uuid4().hex}{extension}"
+
+
+def validate_document_file(upload):
+    extension = Path(upload.name).suffix.lower().lstrip(".")
+    if extension not in settings.DOCUMENT_ALLOWED_EXTENSIONS:
+        raise ValidationError(f"Extensão .{extension or '(ausente)'} não permitida.")
+    limit = settings.DOCUMENT_MAX_UPLOAD_MB * 1024 * 1024
+    if upload.size > limit:
+        raise ValidationError(f"O arquivo excede o limite de {settings.DOCUMENT_MAX_UPLOAD_MB} MB.")
+    allowed_mime_types = {
+        "application/pdf", "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/plain", "image/png", "image/jpeg",
+    }
+    content_type = getattr(upload, "content_type", None)
+    if content_type and content_type not in allowed_mime_types:
+        raise ValidationError("O tipo de conteúdo do arquivo não é permitido.")
+
+
+class DocumentCategory(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=120, unique=True, blank=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "categoria de documento"
+        verbose_name_plural = "categorias de documentos"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base_slug = slugify(self.name) or "categoria"
+            candidate = base_slug
+            suffix = 2
+            while DocumentCategory.objects.exclude(pk=self.pk).filter(slug=candidate).exists():
+                candidate = f"{base_slug}-{suffix}"
+                suffix += 1
+            self.slug = candidate
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+
+class Document(models.Model):
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    category = models.ForeignKey(DocumentCategory, on_delete=models.PROTECT, related_name="documents")
+    file = models.FileField(upload_to=document_upload_path, validators=[validate_document_file], blank=True)
+    original_file_name = models.CharField(max_length=255, blank=True, editable=False)
+    external_url = models.URLField(max_length=1000, blank=True, validators=[URLValidator(schemes=["http", "https"])])
+    active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_documents")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        permissions = [("manage_document", "Pode gerenciar documentos")]
+
+    def clean(self):
+        super().clean()
+        if bool(self.file) == bool(self.external_url):
+            raise ValidationError("Informe um arquivo ou uma URL externa, mas não ambos.")
+
+    @property
+    def source_type(self):
+        return "file" if self.file else "external_url"
+
+    def __str__(self):
+        return self.title

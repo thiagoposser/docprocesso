@@ -1,0 +1,6 @@
+.admin-shell { min-height: 100vh; }
+.admin-main { min-height: 100vh; margin-left: var(--sidebar-width); transition: margin-left .2s ease; }
+.admin-content { min-height: calc(100vh - var(--header-height)); background: var(--color-background); }
+.sidebar-collapsed .admin-main { margin-left: var(--sidebar-collapsed-width); }
+.sidebar-backdrop { position: fixed; inset: 0; z-index: 1035; border: 0; background: rgb(15 23 42 / 55%); }
+@media (max-width: 991.98px) { .admin-main, .sidebar-collapsed .admin-main { margin-left: 0; } }
