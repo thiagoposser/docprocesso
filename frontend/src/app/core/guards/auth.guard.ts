@@ -39,3 +39,4 @@ export const paymentViewGuard: CanActivateFn = () => {
 };
 export const paymentAddGuard = permissionGuard('payments.add_payment');
 export const paymentChangeGuard = permissionGuard('payments.change_payment');
+export const reportsGuard = permissionGuard('core.generate_reports');
