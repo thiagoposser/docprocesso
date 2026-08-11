@@ -52,7 +52,7 @@ class PaymentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMode
             sector_ids = user.sector_memberships.filter(active=True, sector__active=True).values_list("sector_id", flat=True)
             queryset = queryset.filter(sector_id__in=sector_ids)
         params = self.request.query_params
-        for parameter, field in {"sector": "sector_id", "supplier": "supplier_id"}.items():
+        for parameter, field in {"sector": "sector_id", "supplier": "supplier_id", "process": "process_id"}.items():
             if params.get(parameter):
                 try: queryset = queryset.filter(**{field: int(params[parameter])})
                 except ValueError as error: raise ValidationError({parameter: "Informe um ID inteiro válido."}) from error

@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { adminGuard, auditGuard, authGuard, processAddGuard, processChangeGuard, processViewGuard, sectorGuard } from './core/guards/auth.guard';
+import { adminGuard, auditGuard, authGuard, paymentAddGuard, paymentChangeGuard, paymentViewGuard, processAddGuard, processChangeGuard, processViewGuard, sectorGuard } from './core/guards/auth.guard';
 import { authResolver } from './core/resolvers/auth.resolver';
 
 export const routes: Routes = [
@@ -17,6 +17,10 @@ export const routes: Routes = [
       { path: 'processos/novo', title: 'Novo processo', canActivate: [processAddGuard], data: { breadcrumb: 'Novo processo' }, loadComponent: () => import('./features/processes/pages/process-form/process-form').then(m => m.ProcessForm) },
       { path: 'processos/:id/editar', title: 'Editar processo', canActivate: [processChangeGuard], data: { breadcrumb: 'Editar processo' }, loadComponent: () => import('./features/processes/pages/process-form/process-form').then(m => m.ProcessForm) },
       { path: 'processos/:id', title: 'Detalhes do processo', canActivate: [processViewGuard], data: { breadcrumb: 'Detalhes do processo' }, loadComponent: () => import('./features/processes/pages/process-detail/process-detail').then(m => m.ProcessDetail) },
+      { path: 'pagamentos', title: 'Pagamentos', canActivate: [paymentViewGuard], data: { breadcrumb: 'Pagamentos' }, loadComponent: () => import('./features/payments/pages/payment-list/payment-list').then(m => m.PaymentList) },
+      { path: 'pagamentos/novo', title: 'Novo pagamento', canActivate: [paymentViewGuard, paymentAddGuard], data: { breadcrumb: 'Novo pagamento' }, loadComponent: () => import('./features/payments/pages/payment-form/payment-form').then(m => m.PaymentForm) },
+      { path: 'pagamentos/:id/editar', title: 'Editar pagamento', canActivate: [paymentViewGuard, paymentChangeGuard], data: { breadcrumb: 'Editar pagamento' }, loadComponent: () => import('./features/payments/pages/payment-form/payment-form').then(m => m.PaymentForm) },
+      { path: 'pagamentos/:id', title: 'Detalhes do pagamento', canActivate: [paymentViewGuard], data: { breadcrumb: 'Detalhes do pagamento' }, loadComponent: () => import('./features/payments/pages/payment-detail/payment-detail').then(m => m.PaymentDetail) },
       { path: 'documentos', title: 'Documentos', data: { breadcrumb: 'Documentos' }, loadComponent: () => import('./features/documents/pages/document-list/document-list').then(m => m.DocumentList) },
       { path: 'documentos/novo', title: 'Novo documento', canActivate: [adminGuard], data: { breadcrumb: 'Novo documento' }, loadComponent: () => import('./features/documents/pages/document-form/document-form').then(m => m.DocumentForm) },
       { path: 'documentos/:id/editar', title: 'Editar documento', canActivate: [adminGuard], data: { breadcrumb: 'Editar documento', mode: 'edit' }, loadComponent: () => import('./features/documents/pages/document-form/document-form').then(m => m.DocumentForm) },

@@ -186,7 +186,7 @@ class PaymentApiTests(APITestCase):
             description="Outro", amount=Decimal("500.00"), due_date=timezone.localdate() + timedelta(days=30),
         )
         self.client.force_authenticate(self.user)
-        filtered = self.client.get(reverse("payment-list"), {"status": "PENDING", "supplier": self.supplier.pk, "min_amount": "400", "due_from": timezone.localdate().isoformat()})
+        filtered = self.client.get(reverse("payment-list"), {"status": "PENDING", "supplier": self.supplier.pk, "process": self.process.pk, "min_amount": "400", "due_from": timezone.localdate().isoformat()})
         self.assertEqual(filtered.status_code, status.HTTP_200_OK)
         self.assertEqual(filtered.data["count"], 1)
 

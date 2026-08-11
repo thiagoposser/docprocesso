@@ -17,6 +17,7 @@ import { SettingsService } from '../../features/settings/services/settings.servi
       <nav class="sidebar-nav">
         <a routerLink="/dashboard" routerLinkActive="active" title="Dashboard" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="dashboard" /></span><span class="nav-label">Dashboard</span></a>
         @if (auth.can('processes.view_administrativeprocess')) { <a routerLink="/processos" routerLinkActive="active" title="Processos" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="document" /></span><span class="nav-label">Processos</span></a> }
+        @if (canViewPayments()) { <a routerLink="/pagamentos" routerLinkActive="active" title="Pagamentos" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="document" /></span><span class="nav-label">Pagamentos</span></a> }
         <a routerLink="/documentos" routerLinkActive="active" title="Documentos" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="document" /></span><span class="nav-label">Documentos</span></a>
         @if (auth.isAdmin() || canViewAudit() || canManageSectors()) {
           <button type="button" class="submenu-toggle" [class.active]="adminOpen()" (click)="adminOpen.update(value => !value)" [attr.aria-expanded]="adminOpen()">
@@ -43,4 +44,5 @@ export class Sidebar {
   readonly settings = inject(SettingsService);
   readonly canViewAudit = () => Boolean(this.auth.user()?.permissions.includes('audit.view_auditlog'));
   readonly canManageSectors = () => Boolean(this.auth.user()?.is_staff || this.auth.user()?.permissions.includes('sectors.manage_sector'));
+  readonly canViewPayments = () => this.auth.can('payments.view_payment') && this.auth.can('payments.view_financial_data') && this.auth.can('processes.view_administrativeprocess');
 }
