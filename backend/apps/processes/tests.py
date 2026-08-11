@@ -7,10 +7,12 @@ from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from decimal import Decimal
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.audit.models import AuditAction, AuditLog
+from apps.payments.models import Payment, Supplier
 from apps.sectors.models import Sector, UserSectorMembership
 
 from .event_services import append_process_event
@@ -155,6 +157,25 @@ class AdministrativeProcessApiTests(APITestCase):
         self.assertEqual(response.data["count"], 0)
         self.assertEqual(self.client.get(reverse("process-detail", args=[hidden.pk])).status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(self.client.get(reverse("process-detail", args=[visible.pk])).status_code, status.HTTP_200_OK)
+
+    def test_operational_search_normalizes_tax_id_and_keeps_scope(self):
+        process = self.create_process(title="Aquisição especial", assignee=self.user)
+        append_process_event(
+            process=process, event_type=ProcessEventType.NOTE, title="Nota operacional",
+            description="Referência alfa+beta", actor=self.user,
+        )
+        supplier = Supplier.objects.create(name="Fornecedor Local", tax_id="12.345.678/0001-90")
+        Payment.objects.create(
+            process=process, sector=self.sector, supplier=supplier, created_by=self.user,
+            description="Compra", amount=Decimal("10.00"), due_date=timezone.localdate(),
+        )
+        self.user.user_permissions.add(*Permission.objects.filter(codename__in=["view_payment", "view_financial_data"]))
+
+        for term in ("Aquisição", "Nota operacional", "alfa+beta", self.sector.name, self.user.username, "12.345.678/0001-90", "Fornecedor Local"):
+            response = self.client.get(reverse("process-list"), {"search": term})
+            self.assertEqual(response.status_code, status.HTTP_200_OK, term)
+            self.assertEqual(response.data["count"], 1, term)
+        self.assertEqual(self.client.get(reverse("process-list"), {"search": "x" * 101}).status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_rejects_creation_outside_scope_and_protected_patch_fields(self):
         denied = self.client.post(
