@@ -39,6 +39,7 @@ class SystemSettings(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        permissions = [("generate_reports", "Pode gerar relatórios")]
         verbose_name = "configuração do sistema"
         verbose_name_plural = "configurações do sistema"
 
