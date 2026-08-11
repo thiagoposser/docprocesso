@@ -12,7 +12,7 @@ from .serializers import (
     ProcessDestinationActionSerializer,
     ProcessDetailSerializer,
     ProcessListSerializer,
-    ProcessMovementSerializer,
+    ProcessTimelineEntrySerializer,
     ProcessRequiredNoteActionSerializer,
     ProcessReturnActionSerializer,
     ProcessTypeSerializer,
@@ -62,7 +62,7 @@ class ProcessViewSet(
         if self.action in {"open", "receive", "complete", "archive"}:
             return ProcessActionSerializer
         if self.action == "timeline":
-            return ProcessMovementSerializer
+            return ProcessTimelineEntrySerializer
         return ProcessDetailSerializer
 
     def get_queryset(self):
@@ -186,8 +186,34 @@ class ProcessViewSet(
     def timeline(self, request, pk=None):
         process = self.get_object()
         movements = process.movements.select_related("actor", "from_sector", "to_sector").chronological()
-        page = self.paginate_queryset(movements)
-        serializer = ProcessMovementSerializer(page if page is not None else movements, many=True)
+        events = process.events.select_related("actor").chronological()
+        entries = [
+            {
+                "kind": "movement", "id": f"movement-{item.pk}", "action": item.action,
+                "action_label": item.get_action_display(), "event_type": None, "event_type_label": None,
+                "title": item.get_action_display(), "actor": item.actor_id, "actor_name": item.actor.full_name,
+                "from_sector": item.from_sector_id, "from_sector_name": item.from_sector.name if item.from_sector else None,
+                "to_sector": item.to_sector_id, "to_sector_name": item.to_sector.name if item.to_sector else None,
+                "note": item.note, "payload": {}, "status_before": item.status_before,
+                "status_before_label": item.get_status_before_display(), "status_after": item.status_after,
+                "status_after_label": item.get_status_after_display(), "created_at": item.created_at,
+            }
+            for item in movements
+        ] + [
+            {
+                "kind": "event", "id": f"event-{item.pk}", "action": None, "action_label": None,
+                "event_type": item.event_type, "event_type_label": item.get_event_type_display(),
+                "title": item.title, "actor": item.actor_id, "actor_name": item.actor.full_name if item.actor else None,
+                "from_sector": None, "from_sector_name": None, "to_sector": None, "to_sector_name": None,
+                "note": item.description, "payload": item.payload, "status_before": None,
+                "status_before_label": None, "status_after": None, "status_after_label": None,
+                "created_at": item.created_at,
+            }
+            for item in events
+        ]
+        entries.sort(key=lambda item: (item["created_at"], item["id"]))
+        page = self.paginate_queryset(entries)
+        serializer = ProcessTimelineEntrySerializer(page if page is not None else entries, many=True)
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
 
 

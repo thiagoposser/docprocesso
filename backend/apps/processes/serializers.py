@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from apps.sectors.models import Sector
 
-from .models import AdministrativeProcess, ProcessMovement, ProcessStatus, ProcessType
+from .models import AdministrativeProcess, ProcessStatus, ProcessType
 from .services import create_process
 
 
@@ -101,19 +101,24 @@ class ProcessReturnActionSerializer(ProcessDestinationActionSerializer):
     note = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True, max_length=2000)
 
 
-class ProcessMovementSerializer(serializers.ModelSerializer):
-    action_label = serializers.CharField(source="get_action_display", read_only=True)
-    actor_name = serializers.CharField(source="actor.full_name", read_only=True)
-    from_sector_name = serializers.CharField(source="from_sector.name", read_only=True, allow_null=True)
-    to_sector_name = serializers.CharField(source="to_sector.name", read_only=True, allow_null=True)
-    status_before_label = serializers.CharField(source="get_status_before_display", read_only=True)
-    status_after_label = serializers.CharField(source="get_status_after_display", read_only=True)
-
-    class Meta:
-        model = ProcessMovement
-        fields = (
-            "id", "action", "action_label", "from_sector", "from_sector_name", "to_sector",
-            "to_sector_name", "actor", "actor_name", "note", "status_before",
-            "status_before_label", "status_after", "status_after_label", "created_at",
-        )
-        read_only_fields = fields
+class ProcessTimelineEntrySerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=("movement", "event"), read_only=True)
+    id = serializers.CharField(read_only=True)
+    action = serializers.CharField(read_only=True, allow_null=True)
+    action_label = serializers.CharField(read_only=True, allow_null=True)
+    event_type = serializers.CharField(read_only=True, allow_null=True)
+    event_type_label = serializers.CharField(read_only=True, allow_null=True)
+    title = serializers.CharField(read_only=True)
+    actor = serializers.IntegerField(read_only=True, allow_null=True)
+    actor_name = serializers.CharField(read_only=True, allow_null=True)
+    from_sector = serializers.IntegerField(read_only=True, allow_null=True)
+    from_sector_name = serializers.CharField(read_only=True, allow_null=True)
+    to_sector = serializers.IntegerField(read_only=True, allow_null=True)
+    to_sector_name = serializers.CharField(read_only=True, allow_null=True)
+    note = serializers.CharField(read_only=True, allow_blank=True)
+    payload = serializers.DictField(read_only=True)
+    status_before = serializers.CharField(read_only=True, allow_null=True)
+    status_before_label = serializers.CharField(read_only=True, allow_null=True)
+    status_after = serializers.CharField(read_only=True, allow_null=True)
+    status_after_label = serializers.CharField(read_only=True, allow_null=True)
+    created_at = serializers.DateTimeField(read_only=True)

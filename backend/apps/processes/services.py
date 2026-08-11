@@ -3,12 +3,16 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.sectors.policies import evaluate_sector_access
+from apps.audit.models import AuditAction
+from apps.audit.services import record_audit
 
+from .event_services import append_process_event
 from .models import (
     AdministrativeProcess,
     ProcessMovement,
     ProcessMovementAction,
     ProcessStatus,
+    ProcessEventType,
 )
 
 
@@ -67,6 +71,13 @@ def create_process(*, user, **validated_data):
         raise PermissionDenied("Você não pode criar processos neste setor.")
     process = AdministrativeProcess(created_by=user, **validated_data)
     process.save()
+    append_process_event(
+        process=process,
+        event_type=ProcessEventType.PROCESS_CREATED,
+        title="Processo criado",
+        actor=user,
+        payload={"status": process.status, "origin_sector_id": process.origin_sector_id},
+    )
     return process
 
 
@@ -159,6 +170,14 @@ def _perform_action(*, process_id, actor, action, expected_version, destination=
         note=note.strip(),
         status_before=status_before,
         status_after=status_after,
+    )
+    record_audit(
+        action=AuditAction.PROCESS_WORKFLOW,
+        description=f"Ação de tramitação executada: {action}",
+        user=actor,
+        entity=process,
+        old_values={"status": status_before, "sector_id": movement_source.pk if movement_source else None, "version": expected_version},
+        new_values={"status": status_after, "sector_id": movement_target.pk if movement_target else None, "version": process.version, "action": action},
     )
     return process
 
