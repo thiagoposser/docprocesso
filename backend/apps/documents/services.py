@@ -31,7 +31,7 @@ def create_attachment(*, document, actor, request=None, **data):
         data["original_file_name"] = safe_original_filename(upload.name)
     attachment = Attachment.objects.create(document=document, created_by=actor, **data)
     record_audit(
-        action=AuditAction.CREATE, description="Anexo criado", request=request, entity=attachment,
+        action=AuditAction.FILE_LIFECYCLE, description="Anexo criado", request=request, entity=attachment,
         new_values={"document_id": document.pk, "source_type": attachment.source_type},
     )
     if document.process_id:
@@ -50,7 +50,7 @@ def deactivate_attachment(*, attachment, actor, request=None):
         attachment.deactivated_at = timezone.now()
         attachment.save(update_fields=("active", "deactivated_at"))
         record_audit(
-            action=AuditAction.DEACTIVATE, description="Anexo desativado", request=request,
+            action=AuditAction.FILE_LIFECYCLE, description="Anexo desativado", request=request,
             entity=attachment, old_values={"active": True}, new_values={"active": False},
         )
         if attachment.document.process_id:

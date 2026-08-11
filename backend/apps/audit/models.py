@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -16,6 +17,16 @@ class AuditAction(models.TextChoices):
     SETTINGS_CHANGED = "SETTINGS_CHANGED", "Configurações alteradas"
     PROCESS_WORKFLOW = "PROCESS_WORKFLOW", "Tramitação de processo"
     PROCESS_EVENT = "PROCESS_EVENT", "Evento funcional de processo"
+    PAYMENT_WORKFLOW = "PAYMENT_WORKFLOW", "Fluxo de pagamento"
+    FILE_LIFECYCLE = "FILE_LIFECYCLE", "Ciclo de vida de arquivo"
+
+
+class AuditLogQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Registros de auditoria são imutáveis.")
+
+    def delete(self):
+        raise ValidationError("Registros de auditoria não podem ser excluídos.")
 
 
 class AuditLog(models.Model):
@@ -32,6 +43,8 @@ class AuditLog(models.Model):
     request_path = models.CharField(max_length=500, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
+    objects = AuditLogQuerySet.as_manager()
+
     class Meta:
         ordering = ["-created_at"]
         verbose_name = "registro de auditoria"
@@ -39,3 +52,11 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.action} - {self.description}"
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            raise ValidationError("Registros de auditoria são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Registros de auditoria não podem ser excluídos.")
