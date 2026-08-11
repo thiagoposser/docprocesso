@@ -7,11 +7,14 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
+from rest_framework import status
+from rest_framework.test import APITestCase
 
 from apps.documents.models import Document, DocumentCategory
 from apps.processes.models import AdministrativeProcess, ProcessType
-from apps.sectors.models import Sector
+from apps.sectors.models import Sector, UserSectorMembership
 
 from .models import Payment, PaymentStatus, Supplier
 
@@ -96,3 +99,100 @@ class PaymentModelTests(TestCase):
     def test_declares_financial_permissions(self):
         codenames = set(Permission.objects.filter(content_type__app_label="payments").values_list("codename", flat=True))
         self.assertTrue({"view_payment", "add_payment", "change_payment", "view_financial_data", "confirm_payment"}.issubset(codenames))
+
+
+class PaymentApiTests(APITestCase):
+    def setUp(self):
+        users = get_user_model()
+        self.user = users.objects.create_user(username="finance_api")
+        self.masked_user = users.objects.create_user(username="supplier_api")
+        self.outsider = users.objects.create_user(username="finance_outsider")
+        self.sector = Sector.objects.create(name="Financeiro API", code="FIN-API")
+        self.other_sector = Sector.objects.create(name="Outro financeiro", code="FIN-X")
+        UserSectorMembership.objects.create(user=self.user, sector=self.sector, is_primary=True)
+        UserSectorMembership.objects.create(user=self.outsider, sector=self.other_sector, is_primary=True)
+        process_type = ProcessType.objects.create(name="Financeiro API", code="financeiro-api")
+        self.process = AdministrativeProcess.objects.create(
+            title="Despesa API", process_type=process_type, created_by=self.user,
+            origin_sector=self.sector, current_sector=self.sector,
+        )
+        self.supplier = Supplier.objects.create(
+            name="Fornecedor API", tax_id="12345678901", bank_name="Banco", bank_branch="1", bank_account="2",
+        )
+        finance_permissions = Permission.objects.filter(codename__in={
+            "view_administrativeprocess", "view_supplier", "add_supplier", "change_supplier",
+            "view_payment", "add_payment", "change_payment", "view_financial_data",
+        })
+        self.user.user_permissions.add(*finance_permissions)
+        self.outsider.user_permissions.add(*finance_permissions)
+        self.masked_user.user_permissions.add(Permission.objects.get(codename="view_supplier"))
+
+    def payload(self, **overrides):
+        values = {
+            "process": self.process.pk, "sector": self.sector.pk, "supplier": self.supplier.pk,
+            "description": "Serviço mensal", "amount": "150.25",
+            "due_date": (timezone.localdate() + timedelta(days=10)).isoformat(),
+        }
+        values.update(overrides)
+        return values
+
+    def test_supplier_masks_sensitive_fields_without_financial_permission(self):
+        self.client.force_authenticate(self.masked_user)
+        response = self.client.get(reverse("supplier-detail", args=[self.supplier.pk]))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["tax_id_masked"], "***8901")
+        self.assertNotIn("tax_id", response.data)
+        self.assertNotIn("bank_account", response.data)
+        self.assertNotIn("email", response.data)
+        self.assertNotIn("phone", response.data)
+
+        self.client.force_authenticate(self.user)
+        authorized = self.client.get(reverse("supplier-detail", args=[self.supplier.pk]))
+        self.assertEqual(authorized.data["tax_id"], "12345678901")
+        self.assertEqual(authorized.data["bank_account"], "2")
+
+        created = self.client.post(
+            reverse("supplier-list"), {"name": "Novo", "tax_id": "98.765.432/0001-10", "active": True}, format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        self.assertEqual(created.data["tax_id"], "98765432000110")
+        invalid = self.client.post(reverse("supplier-list"), {"name": "Inválido", "tax_id": "123"}, format="json")
+        self.assertEqual(invalid.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_payment_crud_protects_workflow_fields_and_audit_values(self):
+        self.client.force_authenticate(self.user)
+        created = self.client.post(reverse("payment-list"), self.payload(), format="json")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        payment_id = created.data["id"]
+        self.assertEqual(created.data["status"], PaymentStatus.PENDING)
+        rejected = self.client.patch(reverse("payment-detail", args=[payment_id]), {"status": PaymentStatus.PAID}, format="json")
+        self.assertEqual(rejected.status_code, status.HTTP_400_BAD_REQUEST)
+        updated = self.client.patch(reverse("payment-detail", args=[payment_id]), {"description": "Serviço atualizado"}, format="json")
+        self.assertEqual(updated.status_code, status.HTTP_200_OK)
+
+        from apps.audit.models import AuditLog
+        serialized_audit = str(list(AuditLog.objects.filter(entity_id=str(payment_id)).values("old_values", "new_values")))
+        self.assertNotIn("bank_account", serialized_audit)
+        self.assertNotIn("tax_id", serialized_audit)
+        self.assertNotIn("amount", serialized_audit)
+
+    def test_filters_and_sector_isolation(self):
+        first = Payment.objects.create(created_by=self.user, **{k: v for k, v in self.payload().items() if k not in {"process", "sector", "supplier"}}, process=self.process, sector=self.sector, supplier=self.supplier)
+        Payment.objects.create(
+            process=self.process, sector=self.sector, supplier=self.supplier, created_by=self.user,
+            description="Outro", amount=Decimal("500.00"), due_date=timezone.localdate() + timedelta(days=30),
+        )
+        self.client.force_authenticate(self.user)
+        filtered = self.client.get(reverse("payment-list"), {"status": "PENDING", "supplier": self.supplier.pk, "min_amount": "400", "due_from": timezone.localdate().isoformat()})
+        self.assertEqual(filtered.status_code, status.HTTP_200_OK)
+        self.assertEqual(filtered.data["count"], 1)
+
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.get(reverse("payment-list")).data["count"], 0)
+        self.assertEqual(self.client.get(reverse("payment-detail", args=[first.pk])).status_code, status.HTTP_404_NOT_FOUND)
+        cross_create = self.client.post(reverse("payment-list"), self.payload(), format="json")
+        self.assertEqual(cross_create.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_payment_requires_financial_and_process_permissions(self):
+        self.client.force_authenticate(self.masked_user)
+        self.assertEqual(self.client.get(reverse("payment-list")).status_code, status.HTTP_403_FORBIDDEN)
