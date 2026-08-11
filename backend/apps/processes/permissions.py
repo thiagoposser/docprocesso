@@ -21,6 +21,7 @@ class ProcessPermission(BasePermission):
         "cancel": "processes.cancel_administrativeprocess",
         "archive": "processes.archive_administrativeprocess",
         "timeline": "processes.view_administrativeprocess",
+        "documents": "processes.view_administrativeprocess",
     }
 
     def has_permission(self, request, view):

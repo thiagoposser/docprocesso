@@ -2,7 +2,7 @@ import shutil
 import tempfile
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
@@ -14,8 +14,8 @@ from rest_framework.test import APITestCase
 
 from .models import Attachment, Document, DocumentCategory
 from apps.audit.models import AuditAction, AuditLog
-from apps.processes.models import AdministrativeProcess, ProcessStatus, ProcessType
-from apps.sectors.models import Sector
+from apps.processes.models import AdministrativeProcess, ProcessEventType, ProcessStatus, ProcessType
+from apps.sectors.models import Sector, UserSectorMembership
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
@@ -144,6 +144,121 @@ class DocumentApiTests(APITestCase):
         self.assertTrue(Attachment.objects.filter(pk=attachment.pk, active=False).exists())
         with self.assertRaisesMessage(ValidationError, "removidos logicamente"):
             attachment.delete()
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class ProcessDocumentApiTests(APITestCase):
+    @classmethod
+    def tearDownClass(cls):
+        media_root = str(cls._overridden_settings["MEDIA_ROOT"])
+        super().tearDownClass()
+        shutil.rmtree(media_root, ignore_errors=True)
+
+    def setUp(self):
+        users = get_user_model()
+        self.user = users.objects.create_user(username="process_document_user")
+        self.outsider = users.objects.create_user(username="process_document_outsider")
+        self.sector = Sector.objects.create(name="Documentos do processo", code="DOC-PROC")
+        self.other_sector = Sector.objects.create(name="Documentos restritos", code="DOC-OTHER")
+        UserSectorMembership.objects.create(user=self.user, sector=self.sector, is_primary=True)
+        UserSectorMembership.objects.create(user=self.outsider, sector=self.other_sector, is_primary=True)
+        process_type = ProcessType.objects.create(name="Processo documental", code="processo-documental")
+        self.process = AdministrativeProcess.objects.create(
+            title="Processo com anexos", process_type=process_type, created_by=self.user,
+            origin_sector=self.sector, current_sector=self.sector,
+        )
+        self.category = DocumentCategory.objects.create(name="Documentos processuais")
+        permissions = Permission.objects.filter(codename__in={
+            "view_administrativeprocess", "view_document", "add_document", "change_document",
+            "view_attachment", "add_attachment", "change_attachment",
+        })
+        self.user.user_permissions.add(*permissions)
+        self.outsider.user_permissions.add(*permissions)
+        self.client.force_authenticate(self.user)
+
+    def test_process_document_and_multiple_attachments_hide_physical_sources(self):
+        created = self.client.post(
+            reverse("process-documents", args=[self.process.pk]),
+            {"title": "Contrato", "description": "Versão assinada", "category": self.category.pk},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        document_id = created.data["id"]
+        self.assertEqual(created.data["process"], self.process.pk)
+
+        file_response = self.client.post(
+            reverse("document-attachments", args=[document_id]),
+            {"file": SimpleUploadedFile("contrato.pdf", b"%PDF-1.4", content_type="application/pdf")},
+            format="multipart",
+        )
+        url_response = self.client.post(
+            reverse("document-attachments", args=[document_id]),
+            {"external_url": "https://example.com/contrato"}, format="json",
+        )
+        self.assertEqual(file_response.status_code, status.HTTP_201_CREATED, file_response.data)
+        self.assertEqual(url_response.status_code, status.HTTP_201_CREATED, url_response.data)
+        self.assertNotIn("file", file_response.data)
+        self.assertNotIn("external_url", url_response.data)
+        self.assertEqual(Document.objects.get(pk=document_id).attachments.count(), 2)
+
+        listed = self.client.get(reverse("process-documents", args=[self.process.pk]))
+        self.assertEqual(listed.status_code, status.HTTP_200_OK)
+        self.assertEqual(listed.data["results"][0]["attachments"][0]["download_url"], file_response.data["download_url"])
+        updated = self.client.patch(reverse("document-detail", args=[document_id]), {"title": "Contrato atualizado"})
+        self.assertEqual(updated.status_code, status.HTTP_200_OK, updated.data)
+        self.assertTrue(self.process.events.filter(event_type=ProcessEventType.DOCUMENT_CHANGED).count() >= 4)
+
+    def test_download_is_authorized_and_deactivation_is_logical(self):
+        document = Document.objects.create(
+            title="Arquivo protegido", category=self.category, process=self.process, created_by=self.user,
+        )
+        attachment = Attachment.objects.create(
+            document=document,
+            file=SimpleUploadedFile("protegido.pdf", b"%PDF-1.4", content_type="application/pdf"),
+            original_file_name="protegido.pdf", created_by=self.user,
+        )
+        downloaded = self.client.get(reverse("attachment-download", args=[attachment.pk]))
+        self.assertEqual(downloaded.status_code, status.HTTP_200_OK)
+        self.assertTrue(AuditLog.objects.filter(action=AuditAction.DOCUMENT_DOWNLOAD, entity_id=str(attachment.pk)).exists())
+
+        deactivated = self.client.patch(reverse("attachment-deactivate", args=[attachment.pk]), {}, format="json")
+        self.assertEqual(deactivated.status_code, status.HTTP_200_OK)
+        attachment.refresh_from_db()
+        self.assertFalse(attachment.active)
+        self.assertIsNotNone(attachment.deactivated_at)
+        self.assertEqual(self.client.get(reverse("attachment-download", args=[attachment.pk])).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_sector_isolation_prevents_idor_for_documents_and_downloads(self):
+        document = Document.objects.create(
+            title="Documento restrito", category=self.category, process=self.process, created_by=self.user,
+        )
+        attachment = Attachment.objects.create(
+            document=document, external_url="https://example.com/restrito", created_by=self.user,
+        )
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.get(reverse("process-documents", args=[self.process.pk])).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(self.client.get(reverse("document-detail", args=[document.pk])).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(self.client.get(reverse("attachment-download", args=[attachment.pk])).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_new_upload_reuses_extension_mime_and_size_validation(self):
+        document = Document.objects.create(
+            title="Validação", category=self.category, process=self.process, created_by=self.user,
+        )
+        response = self.client.post(
+            reverse("document-attachments", args=[document.pk]),
+            {"file": SimpleUploadedFile("malware.exe", b"MZ", content_type="application/octet-stream")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.process.status = ProcessStatus.COMPLETED
+        self.process.completed_at = "2026-08-11T12:00:00Z"
+        self.process.save()
+        terminal = self.client.post(
+            reverse("document-attachments", args=[document.pk]),
+            {"external_url": "https://example.com/bloqueado"}, format="json",
+        )
+        self.assertEqual(terminal.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class DocumentAttachmentMigrationTests(TransactionTestCase):
