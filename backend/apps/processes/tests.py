@@ -177,6 +177,24 @@ class AdministrativeProcessApiTests(APITestCase):
             self.assertEqual(response.data["count"], 1, term)
         self.assertEqual(self.client.get(reverse("process-list"), {"search": "x" * 101}).status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_large_timeline_is_paginated_with_bounded_queries(self):
+        process = self.create_process()
+        ProcessEvent.objects.bulk_create([
+            ProcessEvent(
+                process=process, event_type=ProcessEventType.NOTE, title=f"Evento {index}",
+                actor=self.user, payload={},
+            )
+            for index in range(75)
+        ])
+        # Warm middleware singleton and permission caches outside the measured request.
+        self.client.get(reverse("process-detail", args=[process.pk]))
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(reverse("process-timeline", args=[process.pk]), {"page": 2})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 75)
+        self.assertEqual(len(response.data["results"]), 20)
+        self.assertLessEqual(len(queries), 8)
+
     def test_rejects_creation_outside_scope_and_protected_patch_fields(self):
         denied = self.client.post(
             reverse("process-list"),
