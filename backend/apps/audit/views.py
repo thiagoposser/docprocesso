@@ -25,6 +25,8 @@ class AuditLogViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
             queryset = queryset.filter(action=params["action"])
         if params.get("entity"):
             queryset = queryset.filter(entity_type__icontains=params["entity"])
+        if params.get("entity_id"):
+            queryset = queryset.filter(entity_id=params["entity_id"])
         if params.get("method"):
             queryset = queryset.filter(request_method=params["method"].upper())
         for parameter, lookup in (("date_from", "created_at__date__gte"), ("date_to", "created_at__date__lte")):

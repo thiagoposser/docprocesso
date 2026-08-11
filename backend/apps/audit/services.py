@@ -2,7 +2,11 @@ from collections.abc import Mapping
 
 from .models import AuditLog
 
-SENSITIVE_PARTS = ("password", "token", "secret", "authorization", "cookie", "credential", "database_url", "redis_url")
+SENSITIVE_PARTS = (
+    "password", "token", "secret", "authorization", "cookie", "credential",
+    "database_url", "redis_url", "bank", "account", "agency", "branch",
+    "card", "pix", "tax_id", "file_content", "binary", "base64",
+)
 
 
 def sanitize(value):

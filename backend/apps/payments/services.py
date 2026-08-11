@@ -71,7 +71,7 @@ def _perform_payment_action(*, payment_id, actor, action, **values):
         title = "Pagamento cancelado"
     payment.save()
     record_audit(
-        action=AuditAction.UPDATE, description=title, user=actor, entity=payment,
+        action=AuditAction.PAYMENT_WORKFLOW, description=title, user=actor, entity=payment,
         old_values={"status": before}, new_values={"status": payment.status},
     )
     append_process_event(
@@ -121,7 +121,7 @@ def create_payment_receipt(*, payment_id, actor, upload, request=None):
     )
     receipt = PaymentReceipt.objects.create(payment=payment, attachment=attachment, created_by=actor)
     record_audit(
-        action=AuditAction.CREATE, description="Comprovante de pagamento anexado", request=request,
+        action=AuditAction.FILE_LIFECYCLE, description="Comprovante de pagamento anexado", request=request,
         entity=receipt, new_values={"payment_id": payment.pk, "attachment_id": attachment.pk},
     )
     append_process_event(

@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -72,5 +73,19 @@ class AuditApiTests(APITestCase):
         self.assertEqual(self.client.delete(detail).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def test_sanitizer_removes_nested_sensitive_fields(self):
-        log = record_audit(action=AuditAction.UPDATE, description="Seguro", new_values={"name": "ok", "password": "x", "nested": {"refresh_token": "x", "safe": True}, "Authorization": "Bearer x"})
+        log = record_audit(action=AuditAction.UPDATE, description="Seguro", new_values={"name": "ok", "password": "x", "nested": {"refresh_token": "x", "bank_account": "123", "safe": True}, "Authorization": "Bearer x", "pix_key": "secret"})
         self.assertEqual(log.new_values, {"name": "ok", "nested": {"safe": True}})
+
+    def test_logs_are_append_only_at_model_and_queryset_level(self):
+        log = record_audit(action=AuditAction.UPDATE, description="Imutável")
+        log.description = "Alterado"
+        with self.assertRaises(ValidationError):
+            log.save()
+        with self.assertRaises(ValidationError):
+            log.delete()
+        with self.assertRaises(ValidationError):
+            AuditLog.objects.filter(pk=log.pk).update(description="Alterado")
+        with self.assertRaises(ValidationError):
+            AuditLog.objects.filter(pk=log.pk).delete()
+        log.refresh_from_db()
+        self.assertEqual(log.description, "Imutável")
