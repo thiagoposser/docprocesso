@@ -17,3 +17,8 @@ export const auditGuard: CanActivateFn = () => {
   const auth = inject(AuthService); const router = inject(Router);
   return auth.restore().pipe(map(() => auth.user()?.permissions.includes('audit.view_auditlog') ? true : router.createUrlTree(['/403'])));
 };
+
+export const sectorGuard: CanActivateFn = () => {
+  const auth = inject(AuthService); const router = inject(Router);
+  return auth.restore().pipe(map(() => auth.user()?.permissions.includes('sectors.manage_sector') || auth.user()?.is_staff ? true : router.createUrlTree(['/403'])));
+};

@@ -18,7 +18,8 @@ class SectorSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         parent = attrs.get("parent") if "parent" in attrs else None
-        if "parent" in attrs and parent and not parent.active:
+        parent_changed = "parent" in attrs and (not self.instance or parent != self.instance.parent)
+        if parent_changed and parent and not parent.active:
             raise serializers.ValidationError({"parent": "Selecione um setor pai ativo."})
 
         active = attrs.get("active", getattr(self.instance, "active", True))
