@@ -5,9 +5,9 @@ from rest_framework.response import Response
 
 from apps.audit.mixins import AuditedWriteMixin
 
-from .models import Sector
-from .permissions import SectorPermission
-from .serializers import SectorSerializer
+from .models import Sector, UserSectorMembership
+from .permissions import SectorPermission, UserSectorMembershipPermission
+from .serializers import SectorSerializer, UserSectorMembershipSerializer
 from .services import build_sector_tree
 
 
@@ -54,3 +54,32 @@ class SectorViewSet(
     def tree(self, request):
         sectors = self.filter_queryset(self.get_queryset())
         return Response(build_sector_tree(sectors))
+
+
+class UserSectorMembershipViewSet(
+    AuditedWriteMixin,
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = UserSectorMembershipSerializer
+    permission_classes = [UserSectorMembershipPermission]
+    audit_label = "vínculo de usuário com setor"
+    audit_fields = ("user", "sector", "active", "is_primary", "is_manager")
+
+    def get_queryset(self):
+        queryset = UserSectorMembership.objects.select_related("user", "sector")
+        user = self.request.user
+        can_manage = user.is_staff or user.groups.filter(name="Administrador").exists() or user.has_perm("sectors.manage_user_sector_membership")
+        if not can_manage:
+            return queryset.filter(user=user, active=True)
+        params = self.request.query_params
+        if params.get("user"):
+            queryset = queryset.filter(user_id=params["user"])
+        if params.get("sector"):
+            queryset = queryset.filter(sector_id=params["sector"])
+        if params.get("active") in {"true", "false"}:
+            queryset = queryset.filter(active=params["active"] == "true")
+        return queryset

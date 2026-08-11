@@ -16,6 +16,7 @@ export interface AuthUser {
 }
 
 export interface UserSectorMembershipSummary { id: number; sector: number; sector_name: string; sector_code: string | null; is_primary: boolean; is_manager: boolean; }
+export interface UserSectorMembership extends UserSectorMembershipSummary { user: number; user_name: string; active: boolean; created_at: string; updated_at: string; }
 
 export interface TokenPair { access: string; refresh: string; }
 export interface LoginResponse extends TokenPair { user: AuthUser; }
