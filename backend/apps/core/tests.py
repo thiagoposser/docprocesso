@@ -1,12 +1,19 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.contrib.auth.models import Permission
+from datetime import timedelta
+from decimal import Decimal
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import AccessToken
 from django.core.exceptions import ValidationError
 
 from .models import SystemSettings
+from apps.payments.models import Payment, Supplier
+from apps.processes.models import AdministrativeProcess, ProcessStatus, ProcessType
+from apps.sectors.models import Sector, UserSectorMembership
 
 
 class SystemSettingsApiTests(APITestCase):
@@ -52,3 +59,46 @@ class SystemSettingsApiTests(APITestCase):
         with self.assertRaises(ValidationError):
             second.save()
         self.assertEqual(SystemSettings.objects.count(), 1)
+
+
+class DomainDashboardApiTests(APITestCase):
+    def setUp(self):
+        users = get_user_model()
+        self.user = users.objects.create_user(username="dashboard_domain")
+        self.denied = users.objects.create_user(username="dashboard_denied")
+        self.sector = Sector.objects.create(name="Dashboard", code="DASH")
+        self.other_sector = Sector.objects.create(name="Outro dashboard", code="DASH-X")
+        UserSectorMembership.objects.create(user=self.user, sector=self.sector, is_primary=True)
+        process_type = ProcessType.objects.create(name="Dashboard", code="dashboard")
+        self.process = AdministrativeProcess.objects.create(
+            title="Visível", process_type=process_type, created_by=self.user,
+            origin_sector=self.sector, current_sector=self.sector,
+            status=ProcessStatus.IN_PROGRESS,
+        )
+        AdministrativeProcess.objects.create(
+            title="Oculto", process_type=process_type, created_by=self.user,
+            origin_sector=self.other_sector, current_sector=self.other_sector,
+            status=ProcessStatus.COMPLETED, completed_at=timezone.now(),
+        )
+        supplier = Supplier.objects.create(name="Dashboard", tax_id="12345678901")
+        Payment.objects.create(
+            process=self.process, sector=self.sector, supplier=supplier,
+            description="Vencido", amount=Decimal("100.50"),
+            due_date=timezone.localdate() - timedelta(days=1), created_by=self.user,
+        )
+        self.user.user_permissions.add(*Permission.objects.filter(codename__in={
+            "view_administrativeprocess", "view_payment", "view_financial_data",
+        }))
+
+    def test_domain_summaries_are_sector_scoped_and_financial_is_protected(self):
+        self.client.force_authenticate(self.user)
+        processes = self.client.get(reverse("core:dashboard-processes"))
+        financial = self.client.get(reverse("core:dashboard-financial"))
+        self.assertEqual(processes.data, {"in_progress": 1, "completed": 0, "total": 1})
+        self.assertEqual(financial.data["pending"], 1)
+        self.assertEqual(financial.data["overdue"], 1)
+        self.assertEqual(Decimal(financial.data["pending_total"]), Decimal("100.50"))
+
+        self.client.force_authenticate(self.denied)
+        self.assertEqual(self.client.get(reverse("core:dashboard-processes")).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.client.get(reverse("core:dashboard-financial")).status_code, status.HTTP_403_FORBIDDEN)
