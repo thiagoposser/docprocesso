@@ -16,6 +16,7 @@ import { SettingsService } from '../../features/settings/services/settings.servi
       </a>
       <nav class="sidebar-nav">
         <a routerLink="/dashboard" routerLinkActive="active" title="Dashboard" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="dashboard" /></span><span class="nav-label">Dashboard</span></a>
+        @if (auth.can('processes.view_administrativeprocess')) { <a routerLink="/processos" routerLinkActive="active" title="Processos" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="document" /></span><span class="nav-label">Processos</span></a> }
         <a routerLink="/documentos" routerLinkActive="active" title="Documentos" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="document" /></span><span class="nav-label">Documentos</span></a>
         @if (auth.isAdmin() || canViewAudit() || canManageSectors()) {
           <button type="button" class="submenu-toggle" [class.active]="adminOpen()" (click)="adminOpen.update(value => !value)" [attr.aria-expanded]="adminOpen()">
