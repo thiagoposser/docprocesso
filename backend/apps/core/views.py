@@ -13,6 +13,7 @@ from apps.audit.services import record_audit, snapshot
 from apps.notifications.models import NotificationLevel, NotificationType
 from apps.notifications.services import NotificationService
 from .services import dashboard_summary, financial_dashboard_summary, process_dashboard_summary
+from .reports import payment_summary, payments_grouped, process_summary, time_by_sector
 
 
 @api_view(["GET"])
@@ -42,6 +43,49 @@ def financial_dashboard(request):
     if not request.user.has_perms(("payments.view_payment", "payments.view_financial_data")):
         raise PermissionDenied("Você não possui permissão para visualizar dados financeiros.")
     return Response(financial_dashboard_summary(request.user))
+
+
+def _require_reports(user, financial=False):
+    permissions = ["core.generate_reports", "processes.view_administrativeprocess"]
+    if financial:
+        permissions.extend(("payments.view_payment", "payments.view_financial_data"))
+    if not user.has_perms(permissions):
+        raise PermissionDenied("Você não possui permissão para gerar este relatório.")
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def report_process_summary(request):
+    _require_reports(request.user)
+    return Response(process_summary(request.user, request.query_params))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def report_process_time_by_sector(request):
+    _require_reports(request.user)
+    return Response(time_by_sector(request.user, request.query_params))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def report_payment_summary(request):
+    _require_reports(request.user, financial=True)
+    return Response(payment_summary(request.user, request.query_params))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def report_payments_by_sector(request):
+    _require_reports(request.user, financial=True)
+    return Response(payments_grouped(request.user, request.query_params, "sector_id", "sector__name", "sector"))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def report_payments_by_supplier(request):
+    _require_reports(request.user, financial=True)
+    return Response(payments_grouped(request.user, request.query_params, "supplier_id", "supplier__name", "supplier"))
 
 
 class PublicSettingsView(RetrieveUpdateAPIView):

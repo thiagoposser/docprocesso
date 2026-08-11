@@ -87,7 +87,7 @@ class DomainDashboardApiTests(APITestCase):
             due_date=timezone.localdate() - timedelta(days=1), created_by=self.user,
         )
         self.user.user_permissions.add(*Permission.objects.filter(codename__in={
-            "view_administrativeprocess", "view_payment", "view_financial_data",
+            "view_administrativeprocess", "view_payment", "view_financial_data", "generate_reports",
         }))
 
     def test_domain_summaries_are_sector_scoped_and_financial_is_protected(self):
@@ -102,3 +102,23 @@ class DomainDashboardApiTests(APITestCase):
         self.client.force_authenticate(self.denied)
         self.assertEqual(self.client.get(reverse("core:dashboard-processes")).status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(self.client.get(reverse("core:dashboard-financial")).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_report_endpoints_aggregate_filters_and_protect_financial_data(self):
+        self.client.force_authenticate(self.user)
+        process_summary = self.client.get(reverse("core:reports-process-summary"), {"status": ProcessStatus.IN_PROGRESS})
+        payment_summary = self.client.get(reverse("core:reports-payment-summary"), {"min_amount": "100", "purpose": "Vencido"})
+        by_sector = self.client.get(reverse("core:reports-payments-by-sector"))
+        by_supplier = self.client.get(reverse("core:reports-payments-by-supplier"))
+        time_report = self.client.get(reverse("core:reports-process-time-by-sector"))
+        self.assertEqual(process_summary.status_code, status.HTTP_200_OK)
+        self.assertEqual(process_summary.data["total"], 1)
+        self.assertEqual(payment_summary.data["count"], 1)
+        self.assertEqual(Decimal(payment_summary.data["total"]), Decimal("100.50"))
+        self.assertEqual(by_sector.data[0]["sector"], self.sector.pk)
+        self.assertEqual(by_supplier.data[0]["count"], 1)
+        self.assertEqual(time_report.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get(reverse("core:reports-process-summary"), {"date_from": "invalid"}).status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.client.force_authenticate(self.denied)
+        self.assertEqual(self.client.get(reverse("core:reports-process-summary")).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.client.get(reverse("core:reports-payment-summary")).status_code, status.HTTP_403_FORBIDDEN)
