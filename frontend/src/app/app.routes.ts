@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { adminGuard, auditGuard, authGuard, sectorGuard } from './core/guards/auth.guard';
+import { adminGuard, auditGuard, authGuard, processAddGuard, processChangeGuard, processViewGuard, sectorGuard } from './core/guards/auth.guard';
 import { authResolver } from './core/resolvers/auth.resolver';
 
 export const routes: Routes = [
@@ -13,6 +13,10 @@ export const routes: Routes = [
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', title: 'Dashboard', data: { breadcrumb: 'Dashboard' }, loadComponent: () => import('./features/dashboard/dashboard').then(m => m.Dashboard) },
+      { path: 'processos', title: 'Processos', canActivate: [processViewGuard], data: { breadcrumb: 'Processos' }, loadComponent: () => import('./features/processes/pages/process-list/process-list').then(m => m.ProcessList) },
+      { path: 'processos/novo', title: 'Novo processo', canActivate: [processAddGuard], data: { breadcrumb: 'Novo processo' }, loadComponent: () => import('./features/processes/pages/process-form/process-form').then(m => m.ProcessForm) },
+      { path: 'processos/:id/editar', title: 'Editar processo', canActivate: [processChangeGuard], data: { breadcrumb: 'Editar processo' }, loadComponent: () => import('./features/processes/pages/process-form/process-form').then(m => m.ProcessForm) },
+      { path: 'processos/:id', title: 'Detalhes do processo', canActivate: [processViewGuard], data: { breadcrumb: 'Detalhes do processo' }, loadComponent: () => import('./features/processes/pages/process-detail/process-detail').then(m => m.ProcessDetail) },
       { path: 'documentos', title: 'Documentos', data: { breadcrumb: 'Documentos' }, loadComponent: () => import('./features/documents/pages/document-list/document-list').then(m => m.DocumentList) },
       { path: 'documentos/novo', title: 'Novo documento', canActivate: [adminGuard], data: { breadcrumb: 'Novo documento' }, loadComponent: () => import('./features/documents/pages/document-form/document-form').then(m => m.DocumentForm) },
       { path: 'documentos/:id/editar', title: 'Editar documento', canActivate: [adminGuard], data: { breadcrumb: 'Editar documento', mode: 'edit' }, loadComponent: () => import('./features/documents/pages/document-form/document-form').then(m => m.DocumentForm) },
