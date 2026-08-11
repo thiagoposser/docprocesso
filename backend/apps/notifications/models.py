@@ -11,6 +11,7 @@ class NotificationType(models.TextChoices):
     DOCUMENT = "DOCUMENT", "Documento"
     SECURITY = "SECURITY", "Segurança"
     ADMIN = "ADMIN", "Administração"
+    PAYMENT = "PAYMENT", "Pagamento"
 
 
 class NotificationLevel(models.TextChoices):
@@ -47,6 +48,7 @@ class Notification(models.Model):
     read_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
+    deduplication_key = models.CharField(max_length=160, blank=True)
 
     objects = NotificationQuerySet.as_manager()
 
@@ -55,6 +57,12 @@ class Notification(models.Model):
         indexes = [
             models.Index(fields=["user", "read", "created_at"], name="notif_user_read_created"),
             models.Index(fields=["user", "type", "created_at"], name="notif_user_type_created"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "deduplication_key"], condition=~models.Q(deduplication_key=""),
+                name="unique_user_notification_dedupe",
+            ),
         ]
 
     def __str__(self):

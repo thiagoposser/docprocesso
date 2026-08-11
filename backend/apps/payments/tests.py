@@ -17,6 +17,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.documents.models import Document, DocumentCategory
+from apps.notifications.models import Notification, NotificationType
 from apps.processes.models import AdministrativeProcess, ProcessType
 from apps.sectors.models import Sector, UserSectorMembership
 
@@ -207,6 +208,53 @@ class PaymentApiTests(APITestCase):
         self.assertEqual(self.client.get(reverse("payment-detail", args=[first.pk])).status_code, status.HTTP_404_NOT_FOUND)
         cross_create = self.client.post(reverse("payment-list"), self.payload(), format="json")
         self.assertEqual(cross_create.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_deadline_filters_summary_and_notifications_are_scoped_and_idempotent(self):
+        today = timezone.localdate()
+        payments = {
+            key: Payment.objects.create(
+                process=self.process, sector=self.sector, supplier=self.supplier,
+                created_by=self.user, description=key, amount=Decimal("25.00"),
+                due_date=due_date,
+            )
+            for key, due_date in {
+                "overdue": today - timedelta(days=1),
+                "today": today,
+                "upcoming": today + timedelta(days=7),
+                "future": today + timedelta(days=8),
+            }.items()
+        }
+        Payment.objects.create(
+            process=self.process, sector=self.sector, supplier=self.supplier,
+            created_by=self.user, description="paid", amount=Decimal("25.00"),
+            due_date=today - timedelta(days=2), status=PaymentStatus.PAID,
+            paid_at=timezone.now(), paid_amount=Decimal("25.00"),
+            payment_method=PaymentMethod.PIX, paid_by=self.user,
+        )
+        self.client.force_authenticate(self.user)
+
+        for deadline in ("overdue", "today", "upcoming"):
+            response = self.client.get(reverse("payment-list"), {"deadline": deadline})
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual([item["id"] for item in response.data["results"]], [payments[deadline].pk])
+        self.assertEqual(
+            self.client.get(reverse("payment-list"), {"deadline": "invalid"}).status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        summary_url = reverse("payment-deadline-summary")
+        first = self.client.get(summary_url)
+        second = self.client.get(summary_url)
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(first.data, {"overdue": 1, "today": 1, "upcoming": 1})
+        self.assertEqual(second.data, first.data)
+        notifications = Notification.objects.filter(user=self.user, type=NotificationType.PAYMENT)
+        self.assertEqual(notifications.count(), 3)
+        self.assertFalse(any("25" in item.message for item in notifications))
+        self.assertFalse(Notification.objects.filter(user=self.outsider, type=NotificationType.PAYMENT).exists())
+
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.get(summary_url).data, {"overdue": 0, "today": 0, "upcoming": 0})
 
     def test_payment_requires_financial_and_process_permissions(self):
         self.client.force_authenticate(self.masked_user)

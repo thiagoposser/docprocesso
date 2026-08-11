@@ -1,4 +1,5 @@
 import re
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -73,6 +74,19 @@ class PaymentMethod(models.TextChoices):
     OTHER = "OTHER", "Outro"
 
 
+class PaymentQuerySet(models.QuerySet):
+    def with_deadline(self, deadline, *, as_of=None, upcoming_days=7):
+        as_of = as_of or timezone.localdate()
+        active = self.filter(status__in=(PaymentStatus.PENDING, PaymentStatus.SCHEDULED))
+        if deadline == "overdue":
+            return active.filter(due_date__lt=as_of)
+        if deadline == "today":
+            return active.filter(due_date=as_of)
+        if deadline == "upcoming":
+            return active.filter(due_date__gt=as_of, due_date__lte=as_of + timedelta(days=upcoming_days))
+        raise ValueError("Classificação de vencimento inválida.")
+
+
 class Payment(models.Model):
     process = models.ForeignKey("processes.AdministrativeProcess", on_delete=models.PROTECT, related_name="payments")
     document = models.ForeignKey("documents.Document", on_delete=models.PROTECT, related_name="payments", blank=True, null=True)
@@ -92,6 +106,8 @@ class Payment(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_payments")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = PaymentQuerySet.as_manager()
 
     class Meta:
         ordering = ["due_date", "id"]
