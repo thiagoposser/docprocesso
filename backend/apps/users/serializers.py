@@ -5,15 +5,25 @@ from rest_framework import serializers
 User = get_user_model()
 
 
+class UserSectorMembershipSummarySerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    sector = serializers.IntegerField(source="sector_id", read_only=True)
+    sector_name = serializers.CharField(source="sector.name", read_only=True)
+    sector_code = serializers.CharField(source="sector.code", read_only=True, allow_null=True)
+    is_primary = serializers.BooleanField(read_only=True)
+    is_manager = serializers.BooleanField(read_only=True)
+
+
 class CurrentUserSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source="full_name", read_only=True)
     groups = serializers.SlugRelatedField(many=True, read_only=True, slug_field="name")
     permissions = serializers.SerializerMethodField()
     photo_url = serializers.SerializerMethodField()
+    sector_memberships = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ("id", "name", "first_name", "last_name", "username", "email", "is_active", "is_staff", "groups", "permissions", "photo", "photo_url", "last_login", "date_joined")
+        fields = ("id", "name", "first_name", "last_name", "username", "email", "is_active", "is_staff", "groups", "permissions", "photo", "photo_url", "sector_memberships", "last_login", "date_joined")
 
     def get_permissions(self, obj):
         return sorted(obj.get_all_permissions())
@@ -23,6 +33,12 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             return None
         request = self.context.get("request")
         return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+
+    def get_sector_memberships(self, obj):
+        memberships = getattr(obj, "active_sector_memberships", None)
+        if memberships is None:
+            memberships = obj.sector_memberships.filter(active=True).select_related("sector").order_by("-is_primary", "sector__name")
+        return UserSectorMembershipSummarySerializer(memberships, many=True).data
 
 
 class UserSerializer(CurrentUserSerializer):

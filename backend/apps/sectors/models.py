@@ -61,3 +61,64 @@ class Sector(models.Model):
 
     def __str__(self):
         return f"{self.code} - {self.name}" if self.code else self.name
+
+
+class UserSectorMembership(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="sector_memberships",
+    )
+    sector = models.ForeignKey(
+        Sector,
+        on_delete=models.PROTECT,
+        related_name="user_memberships",
+    )
+    active = models.BooleanField(default=True, db_index=True)
+    is_primary = models.BooleanField(default=False)
+    is_manager = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["user_id", "-is_primary", "sector__name"]
+        default_permissions = ("add", "change", "view")
+        permissions = [("manage_user_sector_membership", "Pode gerenciar vínculos entre usuários e setores")]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "sector"], name="unique_user_sector_membership"),
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(active=True, is_primary=True),
+                name="unique_active_primary_sector_per_user",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(is_primary=False) | models.Q(active=True),
+                name="primary_membership_must_be_active",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "active"], name="membership_user_active_idx"),
+            models.Index(fields=["sector", "active"], name="membership_sector_active_idx"),
+        ]
+        verbose_name = "vínculo de usuário com setor"
+        verbose_name_plural = "vínculos de usuários com setores"
+
+    def clean(self):
+        super().clean()
+        if self.is_primary and not self.active:
+            raise ValidationError({"is_primary": "O setor principal deve estar ativo."})
+        activating = self.active
+        if self.pk:
+            previous_active = UserSectorMembership.objects.filter(pk=self.pk).values_list("active", flat=True).first()
+            activating = previous_active is False and self.active
+        if activating and self.user_id and not self.user.is_active:
+            raise ValidationError({"user": "Não é possível vincular um usuário inativo."})
+        if activating and self.sector_id and not self.sector.active:
+            raise ValidationError({"sector": "Não é possível vincular um setor inativo."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user} — {self.sector}"
