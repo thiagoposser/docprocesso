@@ -5,13 +5,17 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import override_settings
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Document, DocumentCategory
+from .models import Attachment, Document, DocumentCategory
 from apps.audit.models import AuditAction, AuditLog
+from apps.processes.models import AdministrativeProcess, ProcessStatus, ProcessType
+from apps.sectors.models import Sector
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
@@ -32,14 +36,22 @@ class DocumentApiTests(APITestCase):
     def authenticate(self, user):
         self.client.force_authenticate(user)
 
-    def test_model_requires_exactly_one_source(self):
-        document = Document(title="Inválido", category=self.category, created_by=self.admin)
-        with self.assertRaises(ValidationError):
-            document.full_clean()
+    def test_logical_document_allows_no_legacy_source_but_rejects_two(self):
+        document = Document(title="Documento lógico", category=self.category, created_by=self.admin)
+        document.full_clean()
         document.file = SimpleUploadedFile("arquivo.pdf", b"%PDF-1.4", content_type="application/pdf")
         document.external_url = "https://example.com/documento"
         with self.assertRaises(ValidationError):
             document.full_clean()
+
+    def test_legacy_endpoint_still_requires_exactly_one_source(self):
+        self.authenticate(self.admin)
+        response = self.client.post(
+            reverse("document-list"),
+            {"title": "Sem origem", "category": self.category.pk, "active": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_admin_creates_upload_with_safe_name_and_dashboard_counts_it(self):
         self.authenticate(self.admin)
@@ -87,3 +99,96 @@ class DocumentApiTests(APITestCase):
         self.assertEqual(updated.status_code, status.HTTP_200_OK)
         created_category = self.client.post(reverse("document-category-list"), {"name": "Contratos", "active": True})
         self.assertEqual(created_category.status_code, status.HTTP_201_CREATED)
+
+    def test_document_supports_multiple_attachments_with_exactly_one_source(self):
+        document = Document.objects.create(title="Dossiê", category=self.category, created_by=self.admin)
+        file_attachment = Attachment.objects.create(
+            document=document,
+            file=SimpleUploadedFile("anexo.pdf", b"%PDF-1.4", content_type="application/pdf"),
+            original_file_name="anexo.pdf",
+            created_by=self.admin,
+        )
+        url_attachment = Attachment.objects.create(
+            document=document, external_url="https://example.com/anexo", created_by=self.admin,
+        )
+
+        self.assertEqual(document.attachments.count(), 2)
+        self.assertEqual((file_attachment.source_type, url_attachment.source_type), ("file", "external_url"))
+        with self.assertRaises(ValidationError):
+            Attachment.objects.create(document=document, created_by=self.admin)
+        with self.assertRaises(ValidationError):
+            Attachment.objects.create(
+                document=document,
+                file=SimpleUploadedFile("duplo.pdf", b"%PDF", content_type="application/pdf"),
+                external_url="https://example.com/duplo",
+                created_by=self.admin,
+            )
+
+    def test_attachment_is_logically_removed_and_terminal_process_blocks_inclusion(self):
+        sector = Sector.objects.create(name="Documentos encerrados", code="DOC-END")
+        process_type = ProcessType.objects.create(name="Documental", code="documental")
+        process = AdministrativeProcess.objects.create(
+            title="Encerrado", process_type=process_type, created_by=self.admin,
+            origin_sector=sector, current_sector=sector, status=ProcessStatus.COMPLETED,
+            completed_at="2026-08-11T12:00:00Z",
+        )
+        document = Document.objects.create(title="Documento do processo", category=self.category, created_by=self.admin, process=process)
+        with self.assertRaisesMessage(ValidationError, "processo encerrado"):
+            Attachment.objects.create(document=document, external_url="https://example.com/bloqueado", created_by=self.admin)
+
+        independent = Document.objects.create(title="Independente", category=self.category, created_by=self.admin)
+        attachment = Attachment.objects.create(document=independent, external_url="https://example.com/ativo", created_by=self.admin)
+        attachment.active = False
+        attachment.deactivated_at = "2026-08-11T12:00:00Z"
+        attachment.save()
+        self.assertTrue(Attachment.objects.filter(pk=attachment.pk, active=False).exists())
+        with self.assertRaisesMessage(ValidationError, "removidos logicamente"):
+            attachment.delete()
+
+
+class DocumentAttachmentMigrationTests(TransactionTestCase):
+    migrate_from = [("documents", "0001_initial")]
+    migrate_to = [("documents", "0002_document_process_attachment")]
+
+    def setUp(self):
+        super().setUp()
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_from)
+        old_apps = executor.loader.project_state(self.migrate_from).apps
+        User = old_apps.get_model("users", "User")
+        Category = old_apps.get_model("documents", "DocumentCategory")
+        LegacyDocument = old_apps.get_model("documents", "Document")
+        user = User.objects.create(username="legacy_document_owner")
+        category = Category.objects.create(name="Legado", slug="legado")
+        self.file_document_id = LegacyDocument.objects.create(
+            title="Arquivo legado", category=category, created_by=user,
+            file="documents/2026/08/legacy.pdf", original_file_name="legacy.pdf",
+        ).pk
+        self.url_document_id = LegacyDocument.objects.create(
+            title="URL legada", category=category, created_by=user,
+            external_url="https://example.com/legacy",
+        ).pk
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_to)
+        self.apps = executor.loader.project_state(self.migrate_to).apps
+
+    def tearDown(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
+        super().tearDown()
+
+    def test_copies_legacy_sources_without_removing_original_fields(self):
+        MigratedDocument = self.apps.get_model("documents", "Document")
+        MigratedAttachment = self.apps.get_model("documents", "Attachment")
+
+        file_document = MigratedDocument.objects.get(pk=self.file_document_id)
+        file_attachment = MigratedAttachment.objects.get(document_id=self.file_document_id)
+        url_document = MigratedDocument.objects.get(pk=self.url_document_id)
+        url_attachment = MigratedAttachment.objects.get(document_id=self.url_document_id)
+
+        self.assertEqual(file_document.file.name, "documents/2026/08/legacy.pdf")
+        self.assertEqual(file_attachment.file.name, file_document.file.name)
+        self.assertEqual(file_attachment.original_file_name, "legacy.pdf")
+        self.assertEqual(url_document.external_url, "https://example.com/legacy")
+        self.assertEqual(url_attachment.external_url, url_document.external_url)

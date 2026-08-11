@@ -16,6 +16,13 @@ def document_upload_path(instance, filename):
     return f"documents/{uploaded_at:%Y/%m}/{uuid.uuid4().hex}{extension}"
 
 
+def attachment_upload_path(instance, filename):
+    """Keep attachments in opaque paths without changing the existing media root."""
+    extension = Path(filename).suffix.lower()
+    uploaded_at = instance.created_at or timezone.now()
+    return f"documents/attachments/{uploaded_at:%Y/%m}/{uuid.uuid4().hex}{extension}"
+
+
 def validate_document_file(upload):
     extension = Path(upload.name).suffix.lower().lstrip(".")
     if extension not in settings.DOCUMENT_ALLOWED_EXTENSIONS:
@@ -65,6 +72,13 @@ class Document(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     category = models.ForeignKey(DocumentCategory, on_delete=models.PROTECT, related_name="documents")
+    process = models.ForeignKey(
+        "processes.AdministrativeProcess",
+        on_delete=models.PROTECT,
+        related_name="documents",
+        blank=True,
+        null=True,
+    )
     file = models.FileField(upload_to=document_upload_path, validators=[validate_document_file], blank=True)
     original_file_name = models.CharField(max_length=255, blank=True, editable=False)
     external_url = models.URLField(max_length=1000, blank=True, validators=[URLValidator(schemes=["http", "https"])])
@@ -79,7 +93,7 @@ class Document(models.Model):
 
     def clean(self):
         super().clean()
-        if bool(self.file) == bool(self.external_url):
+        if self.file and self.external_url:
             raise ValidationError("Informe um arquivo ou uma URL externa, mas não ambos.")
 
     @property
@@ -88,3 +102,57 @@ class Document(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class AttachmentQuerySet(models.QuerySet):
+    def delete(self):
+        raise ValidationError("Anexos devem ser removidos logicamente e não podem ser excluídos.")
+
+
+class Attachment(models.Model):
+    document = models.ForeignKey(Document, on_delete=models.PROTECT, related_name="attachments")
+    file = models.FileField(upload_to=attachment_upload_path, validators=[validate_document_file], blank=True)
+    original_file_name = models.CharField(max_length=255, blank=True, editable=False)
+    external_url = models.URLField(max_length=1000, blank=True, validators=[URLValidator(schemes=["http", "https"])])
+    active = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_attachments")
+    created_at = models.DateTimeField(auto_now_add=True)
+    deactivated_at = models.DateTimeField(blank=True, null=True)
+
+    objects = AttachmentQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        default_permissions = ("add", "change", "view")
+        permissions = [("manage_attachment", "Pode gerenciar anexos")]
+        indexes = [models.Index(fields=["document", "active", "created_at"], name="attachment_doc_active_idx")]
+        verbose_name = "anexo"
+        verbose_name_plural = "anexos"
+
+    def clean(self):
+        super().clean()
+        if bool(self.file) == bool(self.external_url):
+            raise ValidationError("Informe um arquivo ou uma URL externa, mas não ambos.")
+        activating = self.active
+        if self.pk:
+            previous_active = Attachment.objects.filter(pk=self.pk).values_list("active", flat=True).first()
+            activating = previous_active is False and self.active
+        if activating and self.document_id and self.document.process_id:
+            from apps.processes.models import ProcessStatus
+
+            if self.document.process.status in {ProcessStatus.COMPLETED, ProcessStatus.CANCELLED, ProcessStatus.ARCHIVED}:
+                raise ValidationError({"document": "Não é possível incluir anexos em um processo encerrado."})
+
+    @property
+    def source_type(self):
+        return "file" if self.file else "external_url"
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Anexos devem ser removidos logicamente e não podem ser excluídos.")
+
+    def __str__(self):
+        return self.original_file_name or self.external_url or f"Anexo {self.pk or ''}".strip()
