@@ -22,6 +22,7 @@ class PaymentPermission(BasePermission):
         permission = {
             "create": "payments.add_payment", "schedule": "payments.schedule_payment",
             "confirm": "payments.confirm_payment", "cancel": "payments.cancel_payment",
+            "receipts": "payments.manage_payment_receipt" if request.method == "POST" else "payments.view_payment",
         }.get(view.action, "payments.view_payment" if request.method in SAFE_METHODS else "payments.change_payment")
         return request.user.has_perm(permission)
 
@@ -29,5 +30,6 @@ class PaymentPermission(BasePermission):
         permission = {
             "schedule": "payments.schedule_payment", "confirm": "payments.confirm_payment",
             "cancel": "payments.cancel_payment",
+            "receipts": "payments.manage_payment_receipt" if request.method == "POST" else "payments.view_payment",
         }.get(view.action, "payments.view_payment" if request.method in SAFE_METHODS else "payments.change_payment")
         return can_access_sector(request.user, permission=permission, sector=obj.sector)

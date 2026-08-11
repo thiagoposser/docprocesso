@@ -68,6 +68,11 @@ class DocumentCategory(models.Model):
         return self.name
 
 
+class DocumentRole(models.TextChoices):
+    GENERAL = "GENERAL", "Documento geral"
+    PAYMENT_RECEIPT = "PAYMENT_RECEIPT", "Comprovante de pagamento"
+
+
 class Document(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
@@ -79,6 +84,7 @@ class Document(models.Model):
         blank=True,
         null=True,
     )
+    role = models.CharField(max_length=24, choices=DocumentRole.choices, default=DocumentRole.GENERAL, db_index=True)
     file = models.FileField(upload_to=document_upload_path, validators=[validate_document_file], blank=True)
     original_file_name = models.CharField(max_length=255, blank=True, editable=False)
     external_url = models.URLField(max_length=1000, blank=True, validators=[URLValidator(schemes=["http", "https"])])
@@ -140,7 +146,10 @@ class Attachment(models.Model):
         if activating and self.document_id and self.document.process_id:
             from apps.processes.models import ProcessStatus
 
-            if self.document.process.status in {ProcessStatus.COMPLETED, ProcessStatus.CANCELLED, ProcessStatus.ARCHIVED}:
+            blocked = {ProcessStatus.CANCELLED, ProcessStatus.ARCHIVED}
+            if self.document.role != DocumentRole.PAYMENT_RECEIPT:
+                blocked.add(ProcessStatus.COMPLETED)
+            if self.document.process.status in blocked:
                 raise ValidationError({"document": "Não é possível incluir anexos em um processo encerrado."})
 
     @property

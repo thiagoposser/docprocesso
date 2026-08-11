@@ -8,7 +8,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from django.utils.dateparse import parse_date
 
-from .models import Attachment, Document, DocumentCategory
+from .models import Attachment, Document, DocumentCategory, DocumentRole
 from .permissions import AttachmentPermission, CategoryPermission, DocumentPermission, can_access_process_document
 from .serializers import AttachmentSerializer, DocumentCategorySerializer, DocumentSerializer, ProcessDocumentSerializer
 from .services import create_attachment, deactivate_attachment
@@ -38,6 +38,7 @@ class DocumentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMod
         queryset = Document.objects.select_related(
             "category", "created_by", "process", "process__current_sector", "process__origin_sector"
         ).prefetch_related("attachments")
+        queryset = queryset.exclude(role=DocumentRole.PAYMENT_RECEIPT)
         if not is_administrator(self.request.user):
             queryset = queryset.filter(active=True, category__active=True)
         if not self.request.user.is_superuser:
@@ -142,7 +143,14 @@ class AttachmentViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
             document__process__current_sector__isnull=True,
             document__process__origin_sector_id__in=sector_ids,
         )
-        return queryset.filter(Q(document__process__isnull=True) | process_filter).distinct()
+        queryset = queryset.filter(Q(document__process__isnull=True) | process_filter)
+        if not (
+            self.request.user.has_perm("payments.view_financial_data")
+            and self.request.user.has_perm("payments.view_payment")
+            and self.request.user.has_perm("processes.view_administrativeprocess")
+        ):
+            queryset = queryset.filter(payment_receipt__isnull=True)
+        return queryset.distinct()
 
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):

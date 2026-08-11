@@ -12,8 +12,8 @@ class DocumentCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
-    list_display = ("title", "category", "process", "active", "created_by", "updated_at")
-    list_filter = ("active", "category", "process")
+    list_display = ("title", "category", "process", "role", "active", "created_by", "updated_at")
+    list_filter = ("active", "category", "process", "role")
     search_fields = ("title", "description", "category__name", "process__number")
     autocomplete_fields = ("process",)
     readonly_fields = ("created_by", "created_at", "updated_at")

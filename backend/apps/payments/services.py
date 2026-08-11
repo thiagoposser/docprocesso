@@ -6,7 +6,7 @@ from apps.processes.event_services import append_process_event
 from apps.processes.models import ProcessEventType, ProcessStatus
 from apps.sectors.policies import evaluate_sector_access
 
-from .models import Payment, PaymentStatus
+from .models import Payment, PaymentReceipt, PaymentStatus
 
 
 class PaymentDomainError(Exception):
@@ -96,6 +96,40 @@ def confirm_payment(*, payment_id, actor, paid_at, paid_amount, payment_method):
 
 def cancel_payment(*, payment_id, actor, reason):
     return _perform_payment_action(payment_id=payment_id, actor=actor, action="cancel", reason=reason)
+
+
+@transaction.atomic
+def create_payment_receipt(*, payment_id, actor, upload, request=None):
+    from pathlib import Path
+    from apps.documents.models import Attachment, Document, DocumentCategory, DocumentRole
+
+    payment = Payment.objects.select_for_update(of=("self",)).select_related("process", "sector").get(pk=payment_id)
+    decision = evaluate_sector_access(actor, permission="payments.manage_payment_receipt", sector=payment.sector)
+    if not decision.allowed or not actor.has_perm("payments.view_financial_data"):
+        raise PaymentAccessDenied(f"Comprovante não permitido: {decision.reason}.")
+    if payment.status != PaymentStatus.PAID:
+        raise InvalidPaymentTransition("Comprovantes só podem ser anexados a pagamentos confirmados.")
+    if payment.process.status in {ProcessStatus.CANCELLED, ProcessStatus.ARCHIVED}:
+        raise InvalidPaymentTransition("Não é possível anexar comprovante a processo cancelado ou arquivado.")
+    category, _ = DocumentCategory.objects.get_or_create(name="Comprovantes de pagamento")
+    document = Document.objects.create(
+        title=f"Comprovante do pagamento {payment.pk}", category=category,
+        process=payment.process, role=DocumentRole.PAYMENT_RECEIPT, created_by=actor,
+    )
+    attachment = Attachment.objects.create(
+        document=document, file=upload, original_file_name=Path(upload.name).name[:255], created_by=actor,
+    )
+    receipt = PaymentReceipt.objects.create(payment=payment, attachment=attachment, created_by=actor)
+    record_audit(
+        action=AuditAction.CREATE, description="Comprovante de pagamento anexado", request=request,
+        entity=receipt, new_values={"payment_id": payment.pk, "attachment_id": attachment.pk},
+    )
+    append_process_event(
+        process=payment.process, event_type=ProcessEventType.PAYMENT_CHANGED,
+        title="Comprovante anexado", actor=actor,
+        payload={"payment_id": payment.pk, "receipt_id": receipt.pk, "attachment_id": attachment.pk},
+    )
+    return receipt
 
 
 @transaction.atomic

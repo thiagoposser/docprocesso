@@ -2,8 +2,10 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from apps.sectors.policies import can_access_sector
+from apps.documents.models import validate_document_file
+from apps.documents.serializers import AttachmentSerializer
 
-from .models import Payment, PaymentMethod, Supplier
+from .models import Payment, PaymentMethod, PaymentReceipt, Supplier
 from .services import save_payment, save_supplier
 
 
@@ -124,3 +126,16 @@ class PaymentConfirmSerializer(serializers.Serializer):
 
 class PaymentCancelSerializer(serializers.Serializer):
     reason = serializers.CharField(trim_whitespace=True, allow_blank=False, max_length=2000)
+
+
+class PaymentReceiptSerializer(serializers.ModelSerializer):
+    attachment = AttachmentSerializer(read_only=True)
+
+    class Meta:
+        model = PaymentReceipt
+        fields = ("id", "payment", "attachment", "created_by", "created_at")
+        read_only_fields = fields
+
+
+class PaymentReceiptUploadSerializer(serializers.Serializer):
+    file = serializers.FileField(validators=[validate_document_file])
