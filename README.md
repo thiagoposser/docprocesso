@@ -21,6 +21,13 @@ docker-compose.prod.yml     Sobrescritas para produção
 
 O Nginx é o ponto de entrada integrado: encaminha `/api/` e `/admin/` ao Django e as demais rotas ao Angular. Consulte `docs/ARCHITECTURE.md` para as convenções de crescimento.
 
+## Documentação do MVP
+
+- [Guia funcional e operacional](docs/MVP_OPERATION.md): fluxos, matriz de permissões, endpoints, backup, migrations e rollback.
+- [Política de acesso setorial](docs/SECTOR_ACCESS_POLICY.md).
+- [Integridade, privacidade e retenção da auditoria](docs/AUDIT_POLICY.md).
+- [Budgets e medições de consultas](docs/QUERY_PERFORMANCE.md).
+
 ## Pré-requisitos e instalação
 
 Instale apenas Docker Desktop (Windows, com WSL 2) ou Docker Engine com o plugin Compose (Linux). Este template já inclui um `.env` local para o primeiro uso. Em um clone futuro, crie-o a partir do exemplo antes de iniciar:
@@ -86,8 +93,7 @@ docker compose exec backend python manage.py migrate
 docker compose logs -f backend frontend
 docker compose down
 
-# Remover também dados persistentes (ação destrutiva)
-docker compose down --volumes
+# Nunca remova volumes sem autorização explícita e backup validado.
 ```
 
 Os volumes bind de `backend/` e `frontend/` habilitam hot reload. `node_modules` fica em volume nomeado para evitar incompatibilidades entre Windows/Linux e o Linux do container.
