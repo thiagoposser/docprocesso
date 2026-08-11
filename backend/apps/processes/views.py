@@ -1,5 +1,6 @@
 from django.db.models import Q
 from django.utils.dateparse import parse_date
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -191,8 +192,17 @@ class ProcessViewSet(
     @action(detail=True, methods=["get"])
     def timeline(self, request, pk=None):
         process = self.get_object()
-        movements = process.movements.select_related("actor", "from_sector", "to_sector").chronological()
-        events = process.events.select_related("actor").chronological()
+        try:
+            page_number = max(1, int(request.query_params.get("page", 1)))
+        except ValueError as error:
+            raise ValidationError({"page": "Informe uma página inteira válida."}) from error
+        page_size = 20
+        horizon = page_number * page_size
+        movements_queryset = process.movements.select_related("actor", "from_sector", "to_sector").chronological()
+        events_queryset = process.events.select_related("actor").chronological()
+        total = movements_queryset.count() + events_queryset.count()
+        movements = movements_queryset[:horizon]
+        events = events_queryset[:horizon]
         entries = [
             {
                 "kind": "movement", "id": f"movement-{item.pk}", "action": item.action,
@@ -218,9 +228,21 @@ class ProcessViewSet(
             for item in events
         ]
         entries.sort(key=lambda item: (item["created_at"], item["id"]))
-        page = self.paginate_queryset(entries)
-        serializer = ProcessTimelineEntrySerializer(page if page is not None else entries, many=True)
-        return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+        start, end = (page_number - 1) * page_size, page_number * page_size
+        serializer = ProcessTimelineEntrySerializer(entries[start:end], many=True)
+
+        def page_url(number):
+            parts = urlsplit(request.build_absolute_uri())
+            query = dict(parse_qsl(parts.query, keep_blank_values=True))
+            query["page"] = str(number)
+            return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+        return Response({
+            "count": total,
+            "next": page_url(page_number + 1) if end < total else None,
+            "previous": page_url(page_number - 1) if page_number > 1 else None,
+            "results": serializer.data,
+        })
 
     @action(detail=True, methods=["get", "post"])
     def documents(self, request, pk=None):

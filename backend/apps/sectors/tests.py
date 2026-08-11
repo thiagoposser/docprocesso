@@ -6,6 +6,7 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
+from apps.core.models import SystemSettings
 
 from .membership_services import save_membership
 from .models import Sector, UserSectorMembership
@@ -95,6 +96,7 @@ class SectorApiTests(APITestCase):
     def test_tree_is_ordered_nested_and_uses_a_bounded_query_count(self):
         self.authenticate(self.manager)
         Sector.objects.create(name="Administrativo", code="ADM", parent=self.root)
+        SystemSettings.load()
 
         # Settings middleware (1), permission cache (2) and the complete tree (1).
         with self.assertNumQueries(4):

@@ -9,6 +9,8 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import AccessToken
 from django.core.exceptions import ValidationError
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from .models import SystemSettings
 from apps.payments.models import Payment, Supplier
@@ -122,3 +124,15 @@ class DomainDashboardApiTests(APITestCase):
         self.client.force_authenticate(self.denied)
         self.assertEqual(self.client.get(reverse("core:reports-process-summary")).status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(self.client.get(reverse("core:reports-payment-summary")).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_report_query_budgets_are_bounded(self):
+        self.client.force_authenticate(self.user)
+        self.client.get(reverse("core:dashboard"))
+        with CaptureQueriesContext(connection) as process_queries:
+            process_response = self.client.get(reverse("core:reports-process-summary"))
+        with CaptureQueriesContext(connection) as payment_queries:
+            payment_response = self.client.get(reverse("core:reports-payments-by-supplier"))
+        self.assertEqual(process_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(payment_response.status_code, status.HTTP_200_OK)
+        self.assertLessEqual(len(process_queries), 6)
+        self.assertLessEqual(len(payment_queries), 4)
