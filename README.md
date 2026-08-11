@@ -1,6 +1,6 @@
-# Base Angular + Django
+# DocProcesso
 
-Template profissional e reutilizável com Angular 22, Django REST Framework, PostgreSQL, Redis, PgAdmin e Nginx. Nenhuma dependência global de Python, Node ou Angular é necessária: o fluxo completo usa Docker Compose.
+Aplicação para gestão de processos e documentos, construída sobre uma base reutilizável com Angular 22, Django REST Framework, PostgreSQL, Redis, PgAdmin e Nginx. Nenhuma dependência global de Python, Node ou Angular é necessária: o fluxo completo usa Docker Compose.
 
 ## Arquitetura e estrutura
 
