@@ -31,12 +31,13 @@ export type ProcessAction = 'open' | 'forward' | 'receive' | 'return' | 'complet
 export interface ProcessActionPayload { version: number; destination?: number; note?: string; }
 
 export interface ProcessMovement {
-  id: number; action: string; action_label: string;
+  kind: 'movement' | 'event'; id: string; action: string | null; action_label: string | null;
+  event_type: string | null; event_type_label: string | null; title: string;
   from_sector: number | null; from_sector_name: string | null;
   to_sector: number | null; to_sector_name: string | null;
-  actor: number; actor_name: string; note: string;
-  status_before: ProcessStatus; status_before_label: string;
-  status_after: ProcessStatus; status_after_label: string; created_at: string;
+  actor: number | null; actor_name: string | null; note: string; payload: Record<string, unknown>;
+  status_before: ProcessStatus | null; status_before_label: string | null;
+  status_after: ProcessStatus | null; status_after_label: string | null; created_at: string;
 }
 
 export type ProcessTimelinePage = PaginatedResponse<ProcessMovement>;

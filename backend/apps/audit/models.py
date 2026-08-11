@@ -14,6 +14,8 @@ class AuditAction(models.TextChoices):
     DOCUMENT_VIEW = "DOCUMENT_VIEW", "Documento visualizado"
     DOCUMENT_DOWNLOAD = "DOCUMENT_DOWNLOAD", "Documento baixado"
     SETTINGS_CHANGED = "SETTINGS_CHANGED", "Configurações alteradas"
+    PROCESS_WORKFLOW = "PROCESS_WORKFLOW", "Tramitação de processo"
+    PROCESS_EVENT = "PROCESS_EVENT", "Evento funcional de processo"
 
 
 class AuditLog(models.Model):

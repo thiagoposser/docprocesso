@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AdministrativeProcess, ProcessMovement, ProcessType
+from .models import AdministrativeProcess, ProcessEvent, ProcessMovement, ProcessType
 
 
 @admin.register(ProcessType)
@@ -35,6 +35,23 @@ class ProcessMovementAdmin(admin.ModelAdmin):
         "process", "action", "from_sector", "to_sector", "actor", "note",
         "status_before", "status_after", "created_at",
     )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ProcessEvent)
+class ProcessEventAdmin(admin.ModelAdmin):
+    list_display = ("process", "event_type", "title", "actor", "created_at")
+    list_filter = ("event_type",)
+    search_fields = ("process__number", "process__title", "title", "description", "actor__username")
+    readonly_fields = ("process", "event_type", "title", "description", "actor", "payload", "created_at")
 
     def has_add_permission(self, request):
         return False

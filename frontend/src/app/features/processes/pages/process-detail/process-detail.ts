@@ -27,7 +27,7 @@ export class ProcessDetail {
   readonly auth = inject(AuthService); private readonly api = inject(ProcessService); private readonly sectorApi = inject(SectorService); private readonly route = inject(ActivatedRoute); private readonly id = Number(this.route.snapshot.paramMap.get('id'));
   readonly process = signal<ProcessItem | null>(null); readonly error = signal(''); readonly labels = PROCESS_STATUS_LABELS; readonly sectors = signal<FlatSectorNode[]>([]);
   readonly movements = signal<ProcessMovement[]>([]); readonly timelineLoading = signal(true); readonly timelineCount = signal(0); readonly timelinePage = signal(1); readonly timelineNext = signal(false);
-  readonly lastAction = computed(() => this.timelineNext() ? null : this.movements().at(-1)?.action || null);
+  readonly lastAction = computed(() => this.timelineNext() ? null : [...this.movements()].reverse().find(item => item.kind === 'movement')?.action || null);
   constructor() { this.loadProcess(); this.loadTimeline(); this.sectorApi.tree('true').subscribe({ next: tree => this.sectors.set(this.flatten(tree)), error: () => this.error.set('Não foi possível carregar os setores disponíveis.') }); }
   canEdit() { const item = this.process(); return Boolean(item && item.status === 'DRAFT' && this.auth.canInSector('processes.change_administrativeprocess', item.origin_sector)); }
   statusClass(value: ProcessStatus) { return `text-bg-${value === 'COMPLETED' ? 'success' : value === 'CANCELLED' ? 'danger' : value === 'DRAFT' ? 'secondary' : 'primary'}`; }

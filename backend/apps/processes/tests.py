@@ -10,9 +10,11 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.audit.models import AuditAction, AuditLog
 from apps.sectors.models import Sector, UserSectorMembership
 
-from .models import AdministrativeProcess, ProcessMovement, ProcessMovementAction, ProcessStatus, ProcessType
+from .event_services import append_process_event
+from .models import AdministrativeProcess, ProcessEvent, ProcessEventType, ProcessMovement, ProcessMovementAction, ProcessStatus, ProcessType
 from .services import (
     InvalidProcessDestination,
     InvalidProcessTransition,
@@ -458,3 +460,110 @@ class ProcessWorkflowApiTests(APITestCase):
     def test_does_not_expose_generic_movement_write_endpoint(self):
         response = self.client.post("/api/process-movements/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_combines_functional_events_and_movements_once_in_timeline(self):
+        append_process_event(
+            process=self.process,
+            event_type=ProcessEventType.NOTE,
+            title="Informação complementar",
+            actor=self.actor,
+            description="Evento fora da tramitação",
+        )
+        self.assertEqual(self.post_action("open", 1).status_code, status.HTTP_200_OK)
+
+        timeline = self.client.get(reverse("process-timeline", args=[self.process.pk]))
+
+        self.assertEqual(timeline.data["count"], 2)
+        self.assertEqual([item["kind"] for item in timeline.data["results"]], ["event", "movement"])
+        self.assertEqual(timeline.data["results"][0]["event_type"], ProcessEventType.NOTE)
+        self.assertEqual(timeline.data["results"][1]["action"], ProcessMovementAction.OPEN)
+
+
+class ProcessEventTests(TestCase):
+    def setUp(self):
+        self.actor = get_user_model().objects.create_user(username="event_actor")
+        sector = Sector.objects.create(name="Eventos", code="EVENT")
+        process_type = ProcessType.objects.create(name="Eventos", code="eventos")
+        self.process = AdministrativeProcess.objects.create(
+            title="Processo com eventos", process_type=process_type, created_by=self.actor, origin_sector=sector,
+        )
+
+    def test_service_sanitizes_limits_and_audits_event(self):
+        event = append_process_event(
+            process=self.process,
+            event_type=ProcessEventType.DOCUMENT_CHANGED,
+            title="Documento incluído",
+            actor=self.actor,
+            payload={
+                "document_id": 10,
+                "password": "never",
+                "file_content": "binary",
+                "bank_account": "secret",
+                "description": "x" * 800,
+                "nested": {"token": "never", "safe": True},
+            },
+        )
+
+        self.assertEqual(event.payload["document_id"], 10)
+        self.assertEqual(len(event.payload["description"]), 500)
+        self.assertEqual(event.payload["nested"], {"safe": True})
+        self.assertNotIn("password", event.payload)
+        self.assertNotIn("file_content", event.payload)
+        self.assertNotIn("bank_account", event.payload)
+        audit = AuditLog.objects.get(action=AuditAction.PROCESS_EVENT)
+        self.assertEqual(audit.entity_id, str(self.process.pk))
+        self.assertEqual(audit.new_values["event_id"], event.pk)
+
+    def test_events_are_append_only_and_corrections_preserve_original(self):
+        original = append_process_event(
+            process=self.process, event_type=ProcessEventType.NOTE, title="Informação original", actor=self.actor,
+        )
+        correction = append_process_event(
+            process=self.process,
+            event_type=ProcessEventType.CORRECTION,
+            title="Correção",
+            actor=self.actor,
+            corrects_event=original,
+            payload={"corrected_field": "title"},
+        )
+
+        self.assertEqual(ProcessEvent.objects.count(), 2)
+        self.assertEqual(correction.payload["corrects_event_id"], original.pk)
+        original.title = "Mutado"
+        with self.assertRaisesMessage(ValidationError, "imutáveis"):
+            original.save()
+        with self.assertRaisesMessage(ValidationError, "imutáveis"):
+            ProcessEvent.objects.filter(pk=original.pk).update(title="Mutado")
+        with self.assertRaisesMessage(ValidationError, "imutáveis"):
+            original.delete()
+
+    def test_rejects_oversized_payload_and_cross_process_correction(self):
+        oversized = {f"safe_{index}": "x" * 500 for index in range(50)}
+        with self.assertRaisesMessage(ValidationError, "8 KB"):
+            append_process_event(
+                process=self.process, event_type=ProcessEventType.SYSTEM, title="Grande", payload=oversized,
+            )
+
+        other = AdministrativeProcess.objects.create(
+            title="Outro processo", process_type=self.process.process_type,
+            created_by=self.actor, origin_sector=self.process.origin_sector,
+        )
+        original = append_process_event(
+            process=other, event_type=ProcessEventType.NOTE, title="Outro evento", actor=self.actor,
+        )
+        with self.assertRaisesMessage(ValidationError, "mesmo processo"):
+            append_process_event(
+                process=self.process, event_type=ProcessEventType.CORRECTION,
+                title="Correção inválida", actor=self.actor, corrects_event=original,
+            )
+
+    def test_workflow_creates_audit_but_not_duplicate_functional_event(self):
+        permission = Permission.objects.get(codename="open_administrativeprocess")
+        self.actor.user_permissions.add(permission)
+        UserSectorMembership.objects.create(user=self.actor, sector=self.process.origin_sector, is_primary=True)
+
+        open_process(process_id=self.process.pk, actor=self.actor, expected_version=1)
+
+        self.assertEqual(ProcessMovement.objects.count(), 1)
+        self.assertEqual(ProcessEvent.objects.count(), 0)
+        self.assertEqual(AuditLog.objects.filter(action=AuditAction.PROCESS_WORKFLOW).count(), 1)

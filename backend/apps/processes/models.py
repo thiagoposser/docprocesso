@@ -32,6 +32,16 @@ class ProcessMovementAction(models.TextChoices):
     ARCHIVE = "ARCHIVE", "Arquivamento"
 
 
+class ProcessEventType(models.TextChoices):
+    PROCESS_CREATED = "PROCESS_CREATED", "Processo criado"
+    DOCUMENT_CHANGED = "DOCUMENT_CHANGED", "Documento alterado"
+    DUE_DATE_CHANGED = "DUE_DATE_CHANGED", "Vencimento alterado"
+    PAYMENT_CHANGED = "PAYMENT_CHANGED", "Pagamento alterado"
+    CORRECTION = "CORRECTION", "Correção de histórico"
+    NOTE = "NOTE", "Observação funcional"
+    SYSTEM = "SYSTEM", "Evento de sistema"
+
+
 class ProcessType(models.Model):
     name = models.CharField(max_length=150, unique=True)
     code = models.SlugField(max_length=50, unique=True)
@@ -248,3 +258,62 @@ class ProcessMovement(models.Model):
 
     def __str__(self):
         return f"{self.process.number} - {self.get_action_display()}"
+
+
+class ProcessEventQuerySet(models.QuerySet):
+    def chronological(self):
+        return self.order_by("created_at", "id")
+
+    def for_process(self, process):
+        return self.filter(process=process).chronological()
+
+    def update(self, **kwargs):
+        raise ValidationError("Eventos de processo são imutáveis e não podem ser atualizados.")
+
+    def delete(self):
+        raise ValidationError("Eventos de processo são imutáveis e não podem ser excluídos.")
+
+
+class ProcessEvent(models.Model):
+    process = models.ForeignKey(AdministrativeProcess, on_delete=models.PROTECT, related_name="events")
+    event_type = models.CharField(max_length=32, choices=ProcessEventType.choices)
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="process_events",
+        blank=True,
+        null=True,
+    )
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ProcessEventQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        default_permissions = ("view",)
+        indexes = [
+            models.Index(fields=["process", "created_at"], name="event_process_date_idx"),
+            models.Index(fields=["event_type", "created_at"], name="event_type_date_idx"),
+        ]
+        verbose_name = "evento funcional de processo"
+        verbose_name_plural = "eventos funcionais de processos"
+
+    def clean(self):
+        super().clean()
+        if not isinstance(self.payload, dict):
+            raise ValidationError({"payload": "O payload do evento deve ser um objeto JSON."})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Eventos de processo são imutáveis e não podem ser atualizados.")
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Eventos de processo são imutáveis e não podem ser excluídos.")
+
+    def __str__(self):
+        return f"{self.process.number} - {self.title}"
