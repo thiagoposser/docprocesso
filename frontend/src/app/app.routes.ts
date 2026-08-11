@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { adminGuard, auditGuard, authGuard } from './core/guards/auth.guard';
+import { adminGuard, auditGuard, authGuard, sectorGuard } from './core/guards/auth.guard';
 import { authResolver } from './core/resolvers/auth.resolver';
 
 export const routes: Routes = [
@@ -24,6 +24,9 @@ export const routes: Routes = [
           { path: 'usuarios/novo', title: 'Novo usuário', canActivate: [adminGuard], data: { breadcrumb: 'Novo usuário' }, loadComponent: () => import('./features/administration/users/user-form/user-form').then(m => m.UserForm) },
           { path: 'usuarios/:id/editar', title: 'Editar usuário', canActivate: [adminGuard], data: { breadcrumb: 'Editar usuário', mode: 'edit' }, loadComponent: () => import('./features/administration/users/user-form/user-form').then(m => m.UserForm) },
           { path: 'usuarios/:id', title: 'Detalhes do usuário', canActivate: [adminGuard], data: { breadcrumb: 'Detalhes', mode: 'view' }, loadComponent: () => import('./features/administration/users/user-form/user-form').then(m => m.UserForm) },
+          { path: 'setores', title: 'Setores', canActivate: [sectorGuard], data: { breadcrumb: 'Setores' }, loadComponent: () => import('./features/sectors/pages/sector-list/sector-list').then(m => m.SectorList) },
+          { path: 'setores/novo', title: 'Novo setor', canActivate: [sectorGuard], data: { breadcrumb: 'Novo setor' }, loadComponent: () => import('./features/sectors/pages/sector-form/sector-form').then(m => m.SectorForm) },
+          { path: 'setores/:id/editar', title: 'Editar setor', canActivate: [sectorGuard], data: { breadcrumb: 'Editar setor' }, loadComponent: () => import('./features/sectors/pages/sector-form/sector-form').then(m => m.SectorForm) },
           { path: 'auditoria', title: 'Auditoria', canActivate: [auditGuard], data: { breadcrumb: 'Auditoria' }, loadComponent: () => import('./features/administration/audit/pages/audit-list/audit-list').then(m => m.AuditList) },
           { path: 'auditoria/:id', title: 'Detalhes da auditoria', canActivate: [auditGuard], data: { breadcrumb: 'Detalhes da auditoria' }, loadComponent: () => import('./features/administration/audit/pages/audit-detail/audit-detail').then(m => m.AuditDetail) }
         ]

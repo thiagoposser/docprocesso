@@ -137,5 +137,19 @@ class SectorApiTests(APITestCase):
         self.assertEqual(invalid.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("parent", invalid.data)
 
+    def test_edit_preserves_an_existing_inactive_parent_without_allowing_reallocation(self):
+        child = Sector.objects.create(name="Filho histórico", parent=self.root)
+        child.active = False
+        child.save()
+        self.root.active = False
+        self.root.save()
+        self.authenticate(self.manager)
+
+        detail = reverse("sector-detail", args=[child.pk])
+        updated = self.client.patch(detail, {"name": "Filho preservado", "parent": self.root.pk}, format="json")
+        self.assertEqual(updated.status_code, status.HTTP_200_OK)
+        rejected = self.client.patch(reverse("sector-detail", args=[self.inactive.pk]), {"parent": self.root.pk}, format="json")
+        self.assertEqual(rejected.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_requires_authentication_for_reading(self):
         self.assertEqual(self.client.get(reverse("sector-list")).status_code, status.HTTP_401_UNAUTHORIZED)
