@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "apps.sectors",
     "apps.processes",
     "apps.documents",
+    "apps.payments",
     "apps.audit",
     "apps.notifications",
 ]
