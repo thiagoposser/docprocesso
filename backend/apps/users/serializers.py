@@ -23,7 +23,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "name", "first_name", "last_name", "username", "email", "is_active", "is_staff", "groups", "permissions", "photo", "photo_url", "sector_memberships", "last_login", "date_joined")
+        fields = ("id", "name", "first_name", "last_name", "username", "email", "is_active", "is_staff", "is_superuser", "groups", "permissions", "photo", "photo_url", "sector_memberships", "last_login", "date_joined")
 
     def get_permissions(self, obj):
         return sorted(obj.get_all_permissions())

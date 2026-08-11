@@ -9,6 +9,7 @@ from rest_framework.test import APITestCase
 
 from .membership_services import save_membership
 from .models import Sector, UserSectorMembership
+from .policies import evaluate_sector_access
 
 
 class SectorModelTests(TestCase):
@@ -270,3 +271,35 @@ class UserSectorMembershipApiTests(APITestCase):
 
     def test_unauthenticated_access_is_rejected(self):
         self.assertEqual(self.client.get(reverse("user-sector-membership-list")).status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class SectorAccessPolicyTests(TestCase):
+    def setUp(self):
+        users = get_user_model()
+        self.user = users.objects.create_user(username="policy_user")
+        self.superuser = users.objects.create_superuser(username="policy_root", password="safe-password")
+        self.sector = Sector.objects.create(name="Política", code="POL")
+        self.permission = Permission.objects.get(codename="manage_sector")
+
+    def test_denies_by_default_and_requires_permission_plus_membership(self):
+        decision = evaluate_sector_access(self.user, permission="sectors.manage_sector", sector=self.sector)
+        self.assertEqual((decision.allowed, decision.reason), (False, "permission_required"))
+        self.user.user_permissions.add(self.permission)
+        self.user = get_user_model().objects.get(pk=self.user.pk)
+        decision = evaluate_sector_access(self.user, permission="sectors.manage_sector", sector=self.sector)
+        self.assertEqual(decision.reason, "sector_membership_required")
+        UserSectorMembership.objects.create(user=self.user, sector=self.sector)
+        self.assertTrue(evaluate_sector_access(self.user, permission="sectors.manage_sector", sector=self.sector).allowed)
+
+    def test_rejects_inactive_sector_invalid_state_and_missing_manager_scope(self):
+        self.user.user_permissions.add(self.permission)
+        membership = UserSectorMembership.objects.create(user=self.user, sector=self.sector)
+        self.assertEqual(evaluate_sector_access(self.user, permission="sectors.manage_sector", sector=self.sector, require_manager=True).reason, "sector_manager_required")
+        membership.is_manager = True; membership.save()
+        self.assertEqual(evaluate_sector_access(self.user, permission="sectors.manage_sector", sector=self.sector, resource_state="DONE", allowed_states={"OPEN"}).reason, "invalid_resource_state")
+        self.sector.active = False; self.sector.save()
+        self.assertEqual(evaluate_sector_access(self.user, permission="sectors.manage_sector", sector=self.sector).reason, "inactive_or_invalid_sector")
+
+    def test_superuser_bypasses_scope_and_state(self):
+        decision = evaluate_sector_access(self.superuser, permission="unknown.permission", sector=self.sector, resource_state="DONE", allowed_states={"OPEN"}, require_manager=True)
+        self.assertEqual((decision.allowed, decision.reason), (True, "superuser"))

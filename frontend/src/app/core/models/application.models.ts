@@ -11,7 +11,7 @@ export interface UserPayload {
 
 export interface AuthUser {
   id: number; name: string; first_name: string; last_name: string; username: string;
-  email: string; is_active: boolean; is_staff: boolean; groups: string[];
+  email: string; is_active: boolean; is_staff: boolean; is_superuser: boolean; groups: string[];
   permissions: string[]; photo_url: string | null; sector_memberships: UserSectorMembershipSummary[]; last_login: string | null; date_joined: string;
 }
 
