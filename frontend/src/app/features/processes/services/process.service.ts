@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 
-import { ProcessItem, ProcessPage, ProcessPayload, ProcessQuery, ProcessType } from '../models/process.models';
+import { ProcessAction, ProcessActionPayload, ProcessItem, ProcessPage, ProcessPayload, ProcessQuery, ProcessTimelinePage, ProcessType } from '../models/process.models';
 
 @Injectable({ providedIn: 'root' })
 export class ProcessService {
@@ -22,4 +22,6 @@ export class ProcessService {
   get(id: number) { return this.http.get<ProcessItem>(`/api/processes/${id}/`); }
   create(payload: ProcessPayload) { return this.http.post<ProcessItem>('/api/processes/', payload); }
   update(id: number, payload: Partial<ProcessPayload>) { return this.http.patch<ProcessItem>(`/api/processes/${id}/`, payload); }
+  action(id: number, action: ProcessAction, payload: ProcessActionPayload) { return this.http.post<ProcessItem>(`/api/processes/${id}/${action}/`, payload); }
+  timeline(id: number, page = 1) { return this.http.get<ProcessTimelinePage>(`/api/processes/${id}/timeline/`, { params: { page } }); }
 }

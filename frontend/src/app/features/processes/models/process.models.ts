@@ -26,6 +26,21 @@ export interface ProcessQuery {
 
 export type ProcessPage = PaginatedResponse<ProcessItem>;
 
+export type ProcessAction = 'open' | 'forward' | 'receive' | 'return' | 'complete' | 'reopen' | 'cancel' | 'archive';
+
+export interface ProcessActionPayload { version: number; destination?: number; note?: string; }
+
+export interface ProcessMovement {
+  id: number; action: string; action_label: string;
+  from_sector: number | null; from_sector_name: string | null;
+  to_sector: number | null; to_sector_name: string | null;
+  actor: number; actor_name: string; note: string;
+  status_before: ProcessStatus; status_before_label: string;
+  status_after: ProcessStatus; status_after_label: string; created_at: string;
+}
+
+export type ProcessTimelinePage = PaginatedResponse<ProcessMovement>;
+
 export const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
   DRAFT: 'Rascunho', OPEN: 'Aberto', IN_PROGRESS: 'Em andamento',
   COMPLETED: 'Concluído', CANCELLED: 'Cancelado', ARCHIVED: 'Arquivado'
