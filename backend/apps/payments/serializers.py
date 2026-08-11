@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from apps.sectors.policies import can_access_sector
 
-from .models import Payment, Supplier
+from .models import Payment, PaymentMethod, Supplier
 from .services import save_payment, save_supplier
 
 
@@ -54,16 +54,16 @@ class PaymentSerializer(serializers.ModelSerializer):
     sector_name = serializers.CharField(source="sector.name", read_only=True)
     process_number = serializers.CharField(source="process.number", read_only=True)
     is_overdue = serializers.BooleanField(read_only=True)
-    protected_fields = {"status", "scheduled_at", "paid_at", "paid_amount", "paid_by", "cancelled_at", "created_by"}
+    protected_fields = {"status", "scheduled_at", "paid_at", "paid_amount", "payment_method", "paid_by", "cancelled_at", "cancellation_reason", "created_by"}
 
     class Meta:
         model = Payment
         fields = (
             "id", "process", "process_number", "document", "sector", "sector_name", "supplier", "supplier_name",
             "description", "amount", "due_date", "status", "is_overdue", "scheduled_at", "paid_at", "paid_amount",
-            "paid_by", "cancelled_at", "created_by", "created_at", "updated_at",
+            "payment_method", "paid_by", "cancelled_at", "cancellation_reason", "created_by", "created_at", "updated_at",
         )
-        read_only_fields = ("id", "process_number", "sector_name", "supplier_name", "status", "is_overdue", "scheduled_at", "paid_at", "paid_amount", "paid_by", "cancelled_at", "created_by", "created_at", "updated_at")
+        read_only_fields = ("id", "process_number", "sector_name", "supplier_name", "status", "is_overdue", "scheduled_at", "paid_at", "paid_amount", "payment_method", "paid_by", "cancelled_at", "cancellation_reason", "created_by", "created_at", "updated_at")
 
     def to_internal_value(self, data):
         attempted = self.protected_fields.intersection(data)
@@ -98,3 +98,29 @@ class PaymentSerializer(serializers.ModelSerializer):
             return save_payment(instance, **validated_data)
         except DjangoValidationError as error:
             raise serializers.ValidationError(error.message_dict) from error
+
+
+class PaymentScheduleSerializer(serializers.Serializer):
+    scheduled_at = serializers.DateTimeField()
+
+    def validate_scheduled_at(self, value):
+        from django.utils import timezone
+        if value <= timezone.now():
+            raise serializers.ValidationError("O agendamento deve estar no futuro.")
+        return value
+
+
+class PaymentConfirmSerializer(serializers.Serializer):
+    paid_at = serializers.DateTimeField()
+    paid_amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    payment_method = serializers.ChoiceField(choices=PaymentMethod.choices)
+
+    def validate_paid_at(self, value):
+        from django.utils import timezone
+        if value > timezone.now():
+            raise serializers.ValidationError("A data do pagamento não pode estar no futuro.")
+        return value
+
+
+class PaymentCancelSerializer(serializers.Serializer):
+    reason = serializers.CharField(trim_whitespace=True, allow_blank=False, max_length=2000)
