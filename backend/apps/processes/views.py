@@ -10,6 +10,7 @@ from apps.documents.serializers import ProcessDocumentSerializer
 from apps.documents.services import create_process_document
 
 from .models import AdministrativeProcess, ProcessStatus, ProcessType
+from .filters import OperationalProcessSearchFilter
 from .permissions import ProcessPermission, ProcessTypePermission
 from .serializers import (
     ProcessActionSerializer,
@@ -47,8 +48,7 @@ class ProcessViewSet(
 ):
     permission_classes = [ProcessPermission]
     http_method_names = ["get", "post", "patch", "head", "options"]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["number", "title", "description", "process_type__name"]
+    filter_backends = [OperationalProcessSearchFilter, filters.OrderingFilter]
     ordering_fields = ["number", "title", "status", "opened_at", "completed_at", "created_at", "updated_at"]
     ordering = ["-updated_at", "id"]
 
