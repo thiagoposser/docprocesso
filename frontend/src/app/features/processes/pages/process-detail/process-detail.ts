@@ -7,18 +7,20 @@ import { PageHeader } from '../../../../shared/components/page-header/page-heade
 import { FlatSectorNode, SectorTreeNode } from '../../../sectors/models/sector.models';
 import { SectorService } from '../../../sectors/services/sector.service';
 import { ProcessActions } from '../../components/process-actions/process-actions';
+import { ProcessDocuments } from '../../components/process-documents/process-documents';
 import { ProcessTimeline } from '../../components/process-timeline/process-timeline';
 import { PROCESS_STATUS_LABELS, ProcessItem, ProcessMovement, ProcessStatus } from '../../models/process.models';
 import { ProcessService } from '../../services/process.service';
 
 @Component({
-  selector: 'app-process-detail', imports: [DatePipe, RouterLink, PageHeader, ProcessActions, ProcessTimeline],
+  selector: 'app-process-detail', imports: [DatePipe, RouterLink, PageHeader, ProcessActions, ProcessDocuments, ProcessTimeline],
   template: `
     <app-page-header title="Detalhes do processo" description="Consulte os dados, a tramitação e as ações disponíveis."><a class="btn btn-outline-secondary" routerLink="/processos">Voltar</a>@if (canEdit()) { <a class="btn btn-primary" [routerLink]="['/processos', process()!.id, 'editar']">Editar rascunho</a> }</app-page-header>
     @if (error()) { <div class="alert alert-danger" role="alert">{{ error() }}</div> }
     @if (process(); as item) {
       <section class="card border-0 shadow-sm"><div class="card-body p-4"><div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-4"><div><div class="text-body-secondary small mb-1">{{ item.number }}</div><h2 class="h4 mb-1">{{ item.title }}</h2><span class="badge text-bg-light border">{{ item.process_type_name }}</span></div><span class="badge align-self-start" [class]="statusClass(item.status)">{{ labels[item.status] }}</span></div><p class="text-body-secondary">{{ item.description || 'Sem descrição.' }}</p><dl class="row mb-0"><dt class="col-sm-4">Setor de origem</dt><dd class="col-sm-8">{{ item.origin_sector_name }}</dd><dt class="col-sm-4">Setor atual</dt><dd class="col-sm-8">{{ item.current_sector_name || 'Ainda não aberto' }}</dd><dt class="col-sm-4">Responsável</dt><dd class="col-sm-8">{{ item.assignee_name || 'Não definido' }}</dd><dt class="col-sm-4">Criado por</dt><dd class="col-sm-8">{{ item.created_by_name }}</dd><dt class="col-sm-4">Versão</dt><dd class="col-sm-8">{{ item.version }}</dd><dt class="col-sm-4">Criado em</dt><dd class="col-sm-8">{{ item.created_at | date:'medium' }}</dd><dt class="col-sm-4">Atualizado em</dt><dd class="col-sm-8">{{ item.updated_at | date:'medium' }}</dd></dl></div></section>
       <app-process-actions [process]="item" [sectors]="sectors()" [lastAction]="lastAction()" (updated)="actionCompleted($event)" (conflict)="reloadAfterConflict()" />
+      <app-process-documents [process]="item" (changed)="loadTimeline(1)" />
       <app-process-timeline [movements]="movements()" [loading]="timelineLoading()" [count]="timelineCount()" [page]="timelinePage()" [hasNext]="timelineNext()" (pageChange)="loadTimeline($event)" />
     }
   `
