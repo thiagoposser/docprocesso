@@ -547,6 +547,29 @@ Não reiniciar banco, Redis ou demais serviços sem necessidade.
 
 ---
 
+## Ambiente de desenvolvimento
+
+O projeto é executado prioritariamente via Docker Compose.
+
+Não assuma que Node.js, Angular CLI, Python, PostgreSQL, Redis ou dependências da aplicação estejam instalados no host.
+
+Antes de executar validações:
+
+1. consulte o arquivo Docker Compose;
+2. identifique os nomes reais dos serviços;
+3. verifique os containers com `docker compose ps`;
+4. execute comandos de aplicação dentro dos containers correspondentes.
+
+Exemplos:
+
+```bash
+docker compose exec backend python manage.py check
+docker compose exec backend python manage.py test
+docker compose exec frontend npm run build
+```
+
+---
+
 # RELATÓRIO FINAL
 
 Ao terminar uma tarefa, sempre informar:
