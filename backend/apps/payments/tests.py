@@ -411,6 +411,6 @@ class PaymentApiTests(APITestCase):
         self.process.status = "COMPLETED"; self.process.completed_at = timezone.now(); self.process.save()
         completed = self.client.post(
             reverse("payment-receipts", args=[payment.pk]),
-            {"file": SimpleUploadedFile("concluido.pdf", b"%PDF", content_type="application/pdf")}, format="multipart",
+            {"file": SimpleUploadedFile("concluido.pdf", b"%PDF-1.4", content_type="application/pdf")}, format="multipart",
         )
         self.assertEqual(completed.status_code, status.HTTP_201_CREATED, completed.data)

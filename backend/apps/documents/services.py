@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from django.db import transaction
 from django.utils import timezone
 
@@ -8,7 +6,7 @@ from apps.audit.services import record_audit
 from apps.processes.event_services import append_process_event
 from apps.processes.models import ProcessEventType
 
-from .models import Attachment, Document
+from .models import Attachment, Document, safe_original_filename
 
 
 @transaction.atomic
@@ -30,7 +28,7 @@ def create_process_document(*, process, actor, request=None, **data):
 def create_attachment(*, document, actor, request=None, **data):
     upload = data.get("file")
     if upload:
-        data["original_file_name"] = Path(upload.name).name[:255]
+        data["original_file_name"] = safe_original_filename(upload.name)
     attachment = Attachment.objects.create(document=document, created_by=actor, **data)
     record_audit(
         action=AuditAction.CREATE, description="Anexo criado", request=request, entity=attachment,

@@ -23,6 +23,28 @@ def attachment_upload_path(instance, filename):
     return f"documents/attachments/{uploaded_at:%Y/%m}/{uuid.uuid4().hex}{extension}"
 
 
+def safe_original_filename(filename):
+    name = Path((filename or "arquivo").replace("\\", "/")).name
+    return "".join(character for character in name if character.isprintable() and character not in {'"', "\r", "\n"})[:255] or "arquivo"
+
+
+def _matches_file_signature(extension, header):
+    signatures = {
+        "pdf": (b"%PDF-",), "png": (b"\x89PNG\r\n\x1a\n",),
+        "jpg": (b"\xff\xd8\xff",), "jpeg": (b"\xff\xd8\xff",),
+        "doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+        "xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+        "docx": (b"PK\x03\x04",), "xlsx": (b"PK\x03\x04",),
+    }
+    if extension == "txt":
+        try:
+            header.decode("utf-8")
+            return b"\x00" not in header
+        except UnicodeDecodeError:
+            return False
+    return any(header.startswith(signature) for signature in signatures.get(extension, ()))
+
+
 def validate_document_file(upload):
     extension = Path(upload.name).suffix.lower().lstrip(".")
     if extension not in settings.DOCUMENT_ALLOWED_EXTENSIONS:
@@ -39,6 +61,12 @@ def validate_document_file(upload):
     content_type = getattr(upload, "content_type", None)
     if content_type and content_type not in allowed_mime_types:
         raise ValidationError("O tipo de conteúdo do arquivo não é permitido.")
+    position = upload.tell() if hasattr(upload, "tell") else 0
+    header = upload.read(16)
+    if hasattr(upload, "seek"):
+        upload.seek(position)
+    if not _matches_file_signature(extension, header):
+        raise ValidationError("A assinatura do arquivo não corresponde à extensão informada.")
 
 
 class DocumentCategory(models.Model):

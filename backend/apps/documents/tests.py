@@ -12,7 +12,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Attachment, Document, DocumentCategory
+from .models import Attachment, Document, DocumentCategory, safe_original_filename
 from apps.audit.models import AuditAction, AuditLog
 from apps.processes.models import AdministrativeProcess, ProcessEventType, ProcessStatus, ProcessType
 from apps.sectors.models import Sector, UserSectorMembership
@@ -66,6 +66,9 @@ class DocumentApiTests(APITestCase):
         self.assertEqual(self.client.get(reverse("core:dashboard")).data["total_documents"], 1)
         downloaded = self.client.get(reverse("document-download", args=[document.pk]))
         self.assertEqual(downloaded.status_code, status.HTTP_200_OK)
+        self.assertEqual(downloaded["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(downloaded["Cache-Control"], "private, no-store")
+        self.assertEqual(downloaded["Content-Security-Policy"], "sandbox")
         self.assertTrue(AuditLog.objects.filter(action=AuditAction.DOCUMENT_DOWNLOAD, entity_id=str(document.pk)).exists())
 
     def test_upload_rejects_extension_mime_and_size(self):
@@ -75,6 +78,9 @@ class DocumentApiTests(APITestCase):
         self.assertEqual(self.client.post(reverse("document-list"), {**base, "file": executable}, format="multipart").status_code, status.HTTP_400_BAD_REQUEST)
         spoofed = SimpleUploadedFile("imagem.jpg", b"script", content_type="text/html")
         self.assertEqual(self.client.post(reverse("document-list"), {**base, "file": spoofed}, format="multipart").status_code, status.HTTP_400_BAD_REQUEST)
+        signature_spoofed = SimpleUploadedFile("imagem.jpg", b"script", content_type="image/jpeg")
+        self.assertEqual(self.client.post(reverse("document-list"), {**base, "file": signature_spoofed}, format="multipart").status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(safe_original_filename("..\\..\\segredo.pdf"), "segredo.pdf")
         with override_settings(DOCUMENT_MAX_UPLOAD_MB=0):
             oversized = SimpleUploadedFile("arquivo.txt", b"x", content_type="text/plain")
             self.assertEqual(self.client.post(reverse("document-list"), {**base, "file": oversized}, format="multipart").status_code, status.HTTP_400_BAD_REQUEST)

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from rest_framework import serializers
 
-from .models import Attachment, Document, DocumentCategory, validate_document_file
+from .models import Attachment, Document, DocumentCategory, safe_original_filename, validate_document_file
 
 
 class DocumentCategorySerializer(serializers.ModelSerializer):
@@ -57,13 +57,13 @@ class DocumentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         upload = validated_data.get("file")
         if upload:
-            validated_data["original_file_name"] = Path(upload.name).name[:255]
+            validated_data["original_file_name"] = safe_original_filename(upload.name)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
         upload = validated_data.get("file")
         if upload:
-            validated_data["original_file_name"] = Path(upload.name).name[:255]
+            validated_data["original_file_name"] = safe_original_filename(upload.name)
         return super().update(instance, validated_data)
 
 
