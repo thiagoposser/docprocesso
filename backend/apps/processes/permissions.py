@@ -12,6 +12,15 @@ class ProcessPermission(BasePermission):
         "create": "processes.add_administrativeprocess",
         "partial_update": "processes.change_administrativeprocess",
         "update": "processes.change_administrativeprocess",
+        "open": "processes.open_administrativeprocess",
+        "forward": "processes.forward_administrativeprocess",
+        "receive": "processes.receive_administrativeprocess",
+        "return_action": "processes.return_administrativeprocess",
+        "complete": "processes.complete_administrativeprocess",
+        "reopen": "processes.reopen_administrativeprocess",
+        "cancel": "processes.cancel_administrativeprocess",
+        "archive": "processes.archive_administrativeprocess",
+        "timeline": "processes.view_administrativeprocess",
     }
 
     def has_permission(self, request, view):

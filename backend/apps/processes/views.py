@@ -1,12 +1,37 @@
 from django.db.models import Q
 from django.utils.dateparse import parse_date
 from rest_framework import filters, mixins, status, viewsets
-from rest_framework.exceptions import ValidationError
+from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from .models import AdministrativeProcess, ProcessStatus, ProcessType
 from .permissions import ProcessPermission, ProcessTypePermission
-from .serializers import ProcessDetailSerializer, ProcessListSerializer, ProcessTypeSerializer, ProcessWriteSerializer
+from .serializers import (
+    ProcessActionSerializer,
+    ProcessDestinationActionSerializer,
+    ProcessDetailSerializer,
+    ProcessListSerializer,
+    ProcessMovementSerializer,
+    ProcessRequiredNoteActionSerializer,
+    ProcessReturnActionSerializer,
+    ProcessTypeSerializer,
+    ProcessWriteSerializer,
+)
+from .services import (
+    InvalidProcessDestination,
+    InvalidProcessTransition,
+    ProcessAccessDenied,
+    ProcessConflictError,
+    archive_process,
+    cancel_process,
+    complete_process,
+    forward_process,
+    open_process,
+    receive_process,
+    reopen_process,
+    return_process,
+)
 
 
 class ProcessViewSet(
@@ -28,6 +53,16 @@ class ProcessViewSet(
             return ProcessListSerializer
         if self.action in {"create", "partial_update", "update"}:
             return ProcessWriteSerializer
+        if self.action in {"forward"}:
+            return ProcessDestinationActionSerializer
+        if self.action in {"return_action"}:
+            return ProcessReturnActionSerializer
+        if self.action in {"reopen", "cancel"}:
+            return ProcessRequiredNoteActionSerializer
+        if self.action in {"open", "receive", "complete", "archive"}:
+            return ProcessActionSerializer
+        if self.action == "timeline":
+            return ProcessMovementSerializer
         return ProcessDetailSerializer
 
     def get_queryset(self):
@@ -90,6 +125,70 @@ class ProcessViewSet(
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
         return Response(ProcessDetailSerializer(instance, context=self.get_serializer_context()).data)
+
+    def _execute_action(self, request, service, *, destination=False):
+        process = self.get_object()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        arguments = {
+            "process_id": process.pk,
+            "actor": request.user,
+            "expected_version": serializer.validated_data["version"],
+            "note": serializer.validated_data.get("note", ""),
+        }
+        if destination:
+            arguments["destination"] = serializer.validated_data["destination"]
+        try:
+            updated = service(**arguments)
+        except ProcessConflictError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_409_CONFLICT)
+        except ProcessAccessDenied as error:
+            raise PermissionDenied(str(error)) from error
+        except (InvalidProcessTransition, InvalidProcessDestination) as error:
+            raise ValidationError({"detail": str(error)}) from error
+        except AdministrativeProcess.DoesNotExist as error:
+            raise NotFound("Processo não encontrado.") from error
+        return Response(ProcessDetailSerializer(updated, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"])
+    def open(self, request, pk=None):
+        return self._execute_action(request, open_process)
+
+    @action(detail=True, methods=["post"])
+    def forward(self, request, pk=None):
+        return self._execute_action(request, forward_process, destination=True)
+
+    @action(detail=True, methods=["post"])
+    def receive(self, request, pk=None):
+        return self._execute_action(request, receive_process)
+
+    @action(detail=True, methods=["post"], url_path="return", url_name="return")
+    def return_action(self, request, pk=None):
+        return self._execute_action(request, return_process, destination=True)
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        return self._execute_action(request, complete_process)
+
+    @action(detail=True, methods=["post"])
+    def reopen(self, request, pk=None):
+        return self._execute_action(request, reopen_process)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        return self._execute_action(request, cancel_process)
+
+    @action(detail=True, methods=["post"])
+    def archive(self, request, pk=None):
+        return self._execute_action(request, archive_process)
+
+    @action(detail=True, methods=["get"])
+    def timeline(self, request, pk=None):
+        process = self.get_object()
+        movements = process.movements.select_related("actor", "from_sector", "to_sector").chronological()
+        page = self.paginate_queryset(movements)
+        serializer = ProcessMovementSerializer(page if page is not None else movements, many=True)
+        return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
 
 
 class ProcessTypeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):

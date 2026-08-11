@@ -375,3 +375,86 @@ class ProcessWorkflowServiceTests(TestCase):
             open_process(process_id=self.process.pk, actor=self.actor, expected_version=1)
 
         self.assertTrue(any("FOR UPDATE" in query["sql"].upper() for query in queries.captured_queries))
+
+
+class ProcessWorkflowApiTests(APITestCase):
+    def setUp(self):
+        users = get_user_model()
+        self.actor = users.objects.create_user(username="workflow_api_actor")
+        self.outsider = users.objects.create_user(username="workflow_api_outsider")
+        self.origin = Sector.objects.create(name="API fluxo origem", code="API-FLOW-O")
+        self.destination = Sector.objects.create(name="API fluxo destino", code="API-FLOW-D")
+        self.other_sector = Sector.objects.create(name="API fluxo restrito", code="API-FLOW-X")
+        UserSectorMembership.objects.create(user=self.actor, sector=self.origin, is_primary=True, is_manager=True)
+        UserSectorMembership.objects.create(user=self.actor, sector=self.destination, is_manager=True)
+        UserSectorMembership.objects.create(user=self.outsider, sector=self.other_sector, is_primary=True, is_manager=True)
+        process_type = ProcessType.objects.create(name="API Fluxo", code="api-fluxo")
+        self.process = AdministrativeProcess.objects.create(
+            title="Fluxo via API", process_type=process_type, created_by=self.actor, origin_sector=self.origin,
+        )
+        codenames = [
+            "view_administrativeprocess", "open_administrativeprocess", "forward_administrativeprocess",
+            "receive_administrativeprocess", "return_administrativeprocess", "complete_administrativeprocess",
+            "reopen_administrativeprocess", "cancel_administrativeprocess", "archive_administrativeprocess",
+        ]
+        permissions = Permission.objects.filter(codename__in=codenames)
+        self.actor.user_permissions.add(*permissions)
+        self.outsider.user_permissions.add(*permissions)
+        self.client.force_authenticate(self.actor)
+
+    def post_action(self, name, version, **payload):
+        return self.client.post(reverse(f"process-{name}", args=[self.process.pk]), {"version": version, **payload}, format="json")
+
+    def test_exposes_every_action_and_paginated_serialized_timeline(self):
+        responses = [
+            self.post_action("open", 1),
+            self.post_action("forward", 2, destination=self.destination.pk, note="Encaminhar"),
+            self.post_action("receive", 3),
+            self.post_action("complete", 4),
+            self.post_action("reopen", 5, note="Complementar"),
+            self.post_action("return", 6, destination=self.origin.pk, note="Corrigir"),
+            self.post_action("receive", 7),
+            self.post_action("cancel", 8, note="Cancelado"),
+            self.post_action("archive", 9),
+        ]
+        self.assertTrue(all(response.status_code == status.HTTP_200_OK for response in responses))
+        self.assertEqual(responses[-1].data["status"], ProcessStatus.ARCHIVED)
+        self.assertEqual(responses[-1].data["version"], 10)
+
+        timeline = self.client.get(reverse("process-timeline", args=[self.process.pk]))
+        self.assertEqual(timeline.status_code, status.HTTP_200_OK)
+        self.assertEqual(timeline.data["count"], 9)
+        self.assertEqual(timeline.data["results"][0]["action"], ProcessMovementAction.OPEN)
+        self.assertEqual(timeline.data["results"][0]["actor_name"], self.actor.full_name)
+        self.assertEqual(timeline.data["results"][1]["from_sector_name"], self.origin.name)
+        self.assertEqual(timeline.data["results"][1]["to_sector_name"], self.destination.name)
+
+    def test_maps_validation_permission_not_found_and_conflict_statuses(self):
+        self.assertEqual(self.post_action("open", 0).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.post_action("open", 1).status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            self.post_action("forward", 1, destination=self.destination.pk).status_code,
+            status.HTTP_409_CONFLICT,
+        )
+        self.assertEqual(
+            self.post_action("return", 2, destination=self.destination.pk, note="").status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(
+            self.client.post(reverse("process-forward", args=[self.process.pk]), {"version": 2, "destination": self.other_sector.pk}, format="json").status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        no_permission = get_user_model().objects.create_user(username="workflow_api_no_permission")
+        UserSectorMembership.objects.create(user=no_permission, sector=self.origin)
+        self.client.force_authenticate(no_permission)
+        self.assertEqual(
+            self.client.post(reverse("process-forward", args=[self.process.pk]), {"version": 2, "destination": self.destination.pk}, format="json").status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_does_not_expose_generic_movement_write_endpoint(self):
+        response = self.client.post("/api/process-movements/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

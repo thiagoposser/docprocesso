@@ -1,7 +1,9 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import AdministrativeProcess, ProcessStatus, ProcessType
+from apps.sectors.models import Sector
+
+from .models import AdministrativeProcess, ProcessMovement, ProcessStatus, ProcessType
 from .services import create_process
 
 
@@ -80,3 +82,38 @@ class ProcessWriteSerializer(serializers.ModelSerializer):
         except DjangoValidationError as error:
             raise serializers.ValidationError(error.message_dict) from error
         return instance
+
+
+class ProcessActionSerializer(serializers.Serializer):
+    version = serializers.IntegerField(min_value=1)
+    note = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True, max_length=2000, default="")
+
+
+class ProcessDestinationActionSerializer(ProcessActionSerializer):
+    destination = serializers.PrimaryKeyRelatedField(queryset=Sector.objects.filter(active=True))
+
+
+class ProcessRequiredNoteActionSerializer(ProcessActionSerializer):
+    note = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True, max_length=2000)
+
+
+class ProcessReturnActionSerializer(ProcessDestinationActionSerializer):
+    note = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True, max_length=2000)
+
+
+class ProcessMovementSerializer(serializers.ModelSerializer):
+    action_label = serializers.CharField(source="get_action_display", read_only=True)
+    actor_name = serializers.CharField(source="actor.full_name", read_only=True)
+    from_sector_name = serializers.CharField(source="from_sector.name", read_only=True, allow_null=True)
+    to_sector_name = serializers.CharField(source="to_sector.name", read_only=True, allow_null=True)
+    status_before_label = serializers.CharField(source="get_status_before_display", read_only=True)
+    status_after_label = serializers.CharField(source="get_status_after_display", read_only=True)
+
+    class Meta:
+        model = ProcessMovement
+        fields = (
+            "id", "action", "action_label", "from_sector", "from_sector_name", "to_sector",
+            "to_sector_name", "actor", "actor_name", "note", "status_before",
+            "status_before_label", "status_after", "status_after_label", "created_at",
+        )
+        read_only_fields = fields
