@@ -13,6 +13,8 @@ export class AuthService {
   readonly user = signal<AuthUser | null>(null);
   readonly isAuthenticated = computed(() => Boolean(this.user()));
   readonly isAdmin = computed(() => Boolean(this.user()?.is_staff || this.user()?.groups.includes('Administrador')));
+  can(permission: string) { const user = this.user(); return Boolean(user?.is_superuser || user?.permissions.includes(permission)); }
+  canInSector(permission: string, sectorId: number, requireManager = false) { const user = this.user(); if (!user || !this.can(permission)) return false; if (user.is_superuser) return true; const membership = user.sector_memberships.find(item => item.sector === sectorId); return Boolean(membership && (!requireManager || membership.is_manager)); }
 
   login(username: string, password: string) {
     return this.loginApi.login(username, password).pipe(
