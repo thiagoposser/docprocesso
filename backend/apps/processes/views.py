@@ -5,6 +5,9 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
+from apps.documents.serializers import ProcessDocumentSerializer
+from apps.documents.services import create_process_document
+
 from .models import AdministrativeProcess, ProcessStatus, ProcessType
 from .permissions import ProcessPermission, ProcessTypePermission
 from .serializers import (
@@ -63,6 +66,8 @@ class ProcessViewSet(
             return ProcessActionSerializer
         if self.action == "timeline":
             return ProcessTimelineEntrySerializer
+        if self.action == "documents":
+            return ProcessDocumentSerializer
         return ProcessDetailSerializer
 
     def get_queryset(self):
@@ -215,6 +220,25 @@ class ProcessViewSet(
         page = self.paginate_queryset(entries)
         serializer = ProcessTimelineEntrySerializer(page if page is not None else entries, many=True)
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+
+    @action(detail=True, methods=["get", "post"])
+    def documents(self, request, pk=None):
+        process = self.get_object()
+        if request.method == "GET":
+            if not request.user.has_perm("documents.view_document"):
+                self.permission_denied(request)
+            queryset = process.documents.select_related("category", "created_by").prefetch_related("attachments")
+            page = self.paginate_queryset(queryset)
+            serializer = self.get_serializer(page if page is not None else queryset, many=True)
+            return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+        if not request.user.has_perm("documents.add_document"):
+            self.permission_denied(request)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        document = create_process_document(
+            process=process, actor=request.user, request=request, **serializer.validated_data
+        )
+        return Response(self.get_serializer(document).data, status=status.HTTP_201_CREATED)
 
 
 class ProcessTypeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
