@@ -10,8 +10,8 @@ from apps.audit.mixins import AuditedWriteMixin
 
 from .models import Payment, PaymentStatus, Supplier
 from .permissions import PaymentPermission, SupplierPermission
-from .serializers import PaymentCancelSerializer, PaymentConfirmSerializer, PaymentScheduleSerializer, PaymentSerializer, SupplierSerializer
-from .services import InvalidPaymentTransition, PaymentAccessDenied, PaymentConflictError, cancel_payment, confirm_payment, schedule_payment
+from .serializers import PaymentCancelSerializer, PaymentConfirmSerializer, PaymentReceiptSerializer, PaymentReceiptUploadSerializer, PaymentScheduleSerializer, PaymentSerializer, SupplierSerializer
+from .services import InvalidPaymentTransition, PaymentAccessDenied, PaymentConflictError, cancel_payment, confirm_payment, create_payment_receipt, schedule_payment
 
 
 class SupplierViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
@@ -43,6 +43,7 @@ class PaymentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMode
             "schedule": PaymentScheduleSerializer,
             "confirm": PaymentConfirmSerializer,
             "cancel": PaymentCancelSerializer,
+            "receipts": PaymentReceiptUploadSerializer if self.request.method == "POST" else PaymentReceiptSerializer,
         }.get(self.action, PaymentSerializer)
 
     def get_queryset(self):
@@ -96,3 +97,21 @@ class PaymentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMode
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         return self._execute_action(request, cancel_payment)
+
+    @action(detail=True, methods=["get", "post"])
+    def receipts(self, request, pk=None):
+        payment = self.get_object()
+        if request.method == "GET":
+            queryset = payment.receipts.select_related("attachment", "attachment__created_by", "created_by")
+            return Response(PaymentReceiptSerializer(queryset, many=True, context=self.get_serializer_context()).data)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            receipt = create_payment_receipt(
+                payment_id=payment.pk, actor=request.user, upload=serializer.validated_data["file"], request=request,
+            )
+        except PaymentAccessDenied as error:
+            raise PermissionDenied(str(error)) from error
+        except InvalidPaymentTransition as error:
+            raise ValidationError({"detail": str(error)}) from error
+        return Response(PaymentReceiptSerializer(receipt, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)

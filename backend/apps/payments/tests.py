@@ -1,12 +1,15 @@
 from datetime import timedelta
 from decimal import Decimal
+import shutil
+import tempfile
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
 from django.db.models.deletion import ProtectedError
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
@@ -103,7 +106,14 @@ class PaymentModelTests(TestCase):
         self.assertTrue({"view_payment", "add_payment", "change_payment", "view_financial_data", "confirm_payment", "schedule_payment", "cancel_payment"}.issubset(codenames))
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class PaymentApiTests(APITestCase):
+    @classmethod
+    def tearDownClass(cls):
+        media_root = str(cls._overridden_settings["MEDIA_ROOT"])
+        super().tearDownClass()
+        shutil.rmtree(media_root, ignore_errors=True)
+
     def setUp(self):
         users = get_user_model()
         self.user = users.objects.create_user(username="finance_api")
@@ -125,6 +135,8 @@ class PaymentApiTests(APITestCase):
             "view_administrativeprocess", "view_supplier", "add_supplier", "change_supplier",
             "view_payment", "add_payment", "change_payment", "view_financial_data",
             "schedule_payment", "confirm_payment", "cancel_payment",
+            "view_paymentreceipt", "manage_payment_receipt",
+            "view_document",
         })
         self.user.user_permissions.add(*finance_permissions)
         self.outsider.user_permissions.add(*finance_permissions)
@@ -293,3 +305,64 @@ class PaymentApiTests(APITestCase):
             ).status_code,
             status.HTTP_403_FORBIDDEN,
         )
+
+    def test_receipts_are_multiple_secure_and_logically_removed(self):
+        payment = Payment.objects.create(
+            process=self.process, sector=self.sector, supplier=self.supplier, created_by=self.user,
+            description="Com comprovantes", amount=Decimal("30.00"), due_date=timezone.localdate(),
+            status=PaymentStatus.PAID, paid_at=timezone.now(), paid_amount=Decimal("30.00"),
+            payment_method=PaymentMethod.PIX, paid_by=self.user,
+        )
+        self.client.force_authenticate(self.user)
+        responses = [
+            self.client.post(
+                reverse("payment-receipts", args=[payment.pk]),
+                {"file": SimpleUploadedFile(f"comprovante-{index}.pdf", b"%PDF-1.4", content_type="application/pdf")},
+                format="multipart",
+            )
+            for index in (1, 2)
+        ]
+        self.assertTrue(all(response.status_code == status.HTTP_201_CREATED for response in responses), responses)
+        self.assertEqual(payment.receipts.count(), 2)
+        from apps.audit.models import AuditLog
+        self.assertEqual(AuditLog.objects.filter(entity_type="payments.PaymentReceipt").count(), 2)
+        attachment_data = responses[0].data["attachment"]
+        self.assertNotIn("file", attachment_data)
+        self.assertNotIn("external_url", attachment_data)
+        attachment_id = attachment_data["id"]
+        self.assertNotIn("comprovante-1", payment.receipts.first().attachment.file.name)
+        self.assertEqual(self.client.get(reverse("attachment-download", args=[attachment_id])).status_code, status.HTTP_200_OK)
+        self.assertFalse(any(item["id"] == payment.receipts.first().attachment.document_id for item in self.client.get(reverse("document-list")).data["results"]))
+        process_documents = self.client.get(reverse("process-documents", args=[self.process.pk]))
+        self.assertFalse(any(item["id"] == payment.receipts.first().attachment.document_id for item in process_documents.data["results"]))
+        self.assertEqual(self.client.get(reverse("core:dashboard")).data["total_documents"], 0)
+
+        deactivated = self.client.patch(reverse("attachment-deactivate", args=[attachment_id]), {}, format="json")
+        self.assertEqual(deactivated.status_code, status.HTTP_200_OK)
+        self.assertFalse(deactivated.data["active"])
+        self.assertEqual(payment.receipts.count(), 2)
+        self.assertEqual(self.process.events.filter(title="Comprovante anexado").count(), 2)
+
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.get(reverse("payment-receipts", args=[payment.pk])).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(self.client.get(reverse("attachment-download", args=[attachment_id])).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_receipt_requires_paid_payment_but_allows_completed_process(self):
+        payment = Payment.objects.create(
+            process=self.process, sector=self.sector, supplier=self.supplier, created_by=self.user,
+            description="Política", amount=Decimal("10.00"), due_date=timezone.localdate(),
+        )
+        self.client.force_authenticate(self.user)
+        pending = self.client.post(
+            reverse("payment-receipts", args=[payment.pk]),
+            {"file": SimpleUploadedFile("pendente.pdf", b"%PDF", content_type="application/pdf")}, format="multipart",
+        )
+        self.assertEqual(pending.status_code, status.HTTP_400_BAD_REQUEST)
+        payment.status = PaymentStatus.PAID; payment.paid_at = timezone.now(); payment.paid_amount = payment.amount
+        payment.payment_method = PaymentMethod.BOLETO; payment.paid_by = self.user; payment.save()
+        self.process.status = "COMPLETED"; self.process.completed_at = timezone.now(); self.process.save()
+        completed = self.client.post(
+            reverse("payment-receipts", args=[payment.pk]),
+            {"file": SimpleUploadedFile("concluido.pdf", b"%PDF", content_type="application/pdf")}, format="multipart",
+        )
+        self.assertEqual(completed.status_code, status.HTTP_201_CREATED, completed.data)

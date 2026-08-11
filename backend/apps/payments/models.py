@@ -173,3 +173,29 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"{self.description} — {self.supplier}"
+
+
+class PaymentReceipt(models.Model):
+    payment = models.ForeignKey(Payment, on_delete=models.PROTECT, related_name="receipts")
+    attachment = models.OneToOneField("documents.Attachment", on_delete=models.PROTECT, related_name="payment_receipt")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_payment_receipts")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        default_permissions = ("view",)
+        permissions = [("manage_payment_receipt", "Pode gerenciar comprovantes de pagamento")]
+        verbose_name = "comprovante de pagamento"
+        verbose_name_plural = "comprovantes de pagamento"
+
+    def clean(self):
+        super().clean()
+        if self.attachment_id and self.attachment.document.process_id != self.payment.process_id:
+            raise ValidationError({"attachment": "O comprovante deve pertencer ao processo do pagamento."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Comprovante {self.pk or ''} — pagamento {self.payment_id}".strip()

@@ -4,10 +4,10 @@ from django.contrib.auth import get_user_model
 
 def dashboard_summary(user=None):
     User = get_user_model()
-    from apps.documents.models import Document
+    from apps.documents.models import Document, DocumentRole
     summary = {
         "total_users": User.objects.filter(is_active=True).count(),
-        "total_documents": Document.objects.filter(active=True).count(),
+        "total_documents": Document.objects.filter(active=True).exclude(role=DocumentRole.PAYMENT_RECEIPT).count(),
         "api_status": "operational",
         "environment": settings.ENVIRONMENT,
         "version": settings.API_VERSION,

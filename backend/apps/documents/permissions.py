@@ -48,10 +48,21 @@ class AttachmentPermission(BasePermission):
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
             return False
-        permission = "documents.view_attachment" if view.action in {"retrieve", "download"} else "documents.change_attachment"
-        return request.user.has_perm(permission)
+        if view.action in {"retrieve", "download"}:
+            return request.user.has_perm("documents.view_attachment") or request.user.has_perm("payments.view_paymentreceipt")
+        return request.user.has_perm("documents.change_attachment") or request.user.has_perm("payments.manage_payment_receipt")
 
     def has_object_permission(self, request, view, obj):
+        if hasattr(obj, "payment_receipt"):
+            payment = obj.payment_receipt.payment
+            if not request.user.has_perm("payments.view_financial_data") or not request.user.has_perm("payments.view_payment"):
+                return False
+            if view.action == "deactivate" and not request.user.has_perm("payments.manage_payment_receipt"):
+                return False
+            return can_access_sector(
+                request.user, permission="processes.view_administrativeprocess",
+                sector=payment.sector,
+            )
         document_permission = "documents.view_document" if view.action in {"retrieve", "download"} else "documents.change_document"
         return can_access_process_document(request.user, obj.document, document_permission=document_permission)
 

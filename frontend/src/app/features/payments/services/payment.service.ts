@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 
-import { Payment, PaymentMethod, PaymentPage, PaymentPayload, PaymentQuery, Supplier, SupplierPage } from '../models/payment.models';
+import { Payment, PaymentMethod, PaymentPage, PaymentPayload, PaymentQuery, PaymentReceipt, ReceiptAttachment, Supplier, SupplierPage } from '../models/payment.models';
 
 @Injectable({ providedIn: 'root' })
 export class PaymentService {
@@ -14,4 +14,8 @@ export class PaymentService {
   schedule(id: number, scheduledAt: string) { return this.http.post<Payment>(`/api/payments/${id}/schedule/`, { scheduled_at: scheduledAt }); }
   confirm(id: number, payload: { paid_at: string; paid_amount: string; payment_method: PaymentMethod }) { return this.http.post<Payment>(`/api/payments/${id}/confirm/`, payload); }
   cancel(id: number, reason: string) { return this.http.post<Payment>(`/api/payments/${id}/cancel/`, { reason }); }
+  receipts(id: number) { return this.http.get<PaymentReceipt[]>(`/api/payments/${id}/receipts/`); }
+  addReceipt(id: number, file: File) { const payload = new FormData(); payload.set('file', file); return this.http.post<PaymentReceipt>(`/api/payments/${id}/receipts/`, payload); }
+  downloadReceipt(attachmentId: number) { return this.http.get(`/api/attachments/${attachmentId}/download/`, { responseType: 'blob' }); }
+  deactivateReceipt(attachmentId: number) { return this.http.patch<ReceiptAttachment>(`/api/attachments/${attachmentId}/deactivate/`, {}); }
 }

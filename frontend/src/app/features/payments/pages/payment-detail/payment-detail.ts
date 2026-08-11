@@ -2,11 +2,11 @@ import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { concatMap, finalize, from, toArray } from 'rxjs';
 
 import { AuthService } from '../../../../core/auth/auth.service';
 import { PageHeader } from '../../../../shared/components/page-header/page-header';
-import { PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS, Payment, PaymentMethod } from '../../models/payment.models';
+import { PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS, Payment, PaymentMethod, PaymentReceipt } from '../../models/payment.models';
 import { PaymentService } from '../../services/payment.service';
 
 @Component({
@@ -23,12 +23,15 @@ import { PaymentService } from '../../services/payment.service';
         @if (action() === 'cancel') { <form [formGroup]="cancelForm" (ngSubmit)="cancel()"><label class="form-label">Motivo</label><textarea class="form-control" rows="3" maxlength="2000" formControlName="reason"></textarea><button class="btn btn-danger mt-3" [disabled]="saving()">Confirmar cancelamento</button></form> }
         </div></section>
       }
+      @if (item.status === 'PAID' || receipts().length) {
+        <section class="card border-0 shadow-sm mt-4"><div class="card-header bg-white d-flex justify-content-between align-items-center"><div><h2 class="h5 mb-0">Comprovantes</h2><small class="text-body-secondary">Arquivos preservados no histórico financeiro.</small></div>@if (item.status === 'PAID' && can('payments.manage_payment_receipt')) { <label class="btn btn-sm btn-primary mb-0">+ Anexar<input class="visually-hidden" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.png,.jpg,.jpeg" (change)="uploadReceipts($event)"></label> }</div><div class="list-group list-group-flush">@for (receipt of receipts(); track receipt.id) { <div class="list-group-item d-flex justify-content-between align-items-center" [class.opacity-50]="!receipt.attachment.active"><span>{{ receipt.attachment.file_name || 'Comprovante' }} @if (!receipt.attachment.active) { <small class="text-danger">(removido)</small> }</span><div>@if (receipt.attachment.active) { <button class="btn btn-sm btn-outline-primary me-1" (click)="downloadReceipt(receipt)">Baixar</button>@if (can('payments.manage_payment_receipt')) { <button class="btn btn-sm btn-outline-secondary" (click)="deactivateReceipt(receipt)">Inativar</button> } }</div></div> } @empty { <div class="p-3 text-body-secondary">Nenhum comprovante anexado.</div> }</div>@if (receiptError()) { <div class="alert alert-danger m-3">{{ receiptError() }}</div> }</section>
+      }
     }
   `
 })
 export class PaymentDetail {
   readonly auth = inject(AuthService); private readonly api = inject(PaymentService); private readonly route = inject(ActivatedRoute); private readonly id = Number(this.route.snapshot.paramMap.get('id'));
-  readonly payment = signal<Payment | null>(null); readonly error = signal(''); readonly saving = signal(false); readonly action = signal<'schedule' | 'confirm' | 'cancel' | null>(null); readonly labels = PAYMENT_STATUS_LABELS; readonly methodLabels = PAYMENT_METHOD_LABELS; readonly methods = Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[];
+  readonly payment = signal<Payment | null>(null); readonly receipts = signal<PaymentReceipt[]>([]); readonly error = signal(''); readonly receiptError = signal(''); readonly saving = signal(false); readonly action = signal<'schedule' | 'confirm' | 'cancel' | null>(null); readonly labels = PAYMENT_STATUS_LABELS; readonly methodLabels = PAYMENT_METHOD_LABELS; readonly methods = Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[];
   readonly scheduleForm = new FormGroup({ scheduled_at: new FormControl('', { nonNullable: true, validators: [Validators.required] }) });
   readonly confirmForm = new FormGroup({ paid_at: new FormControl('', { nonNullable: true, validators: [Validators.required] }), paid_amount: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.pattern(/^\d{1,12}([.,]\d{1,2})?$/)] }), payment_method: new FormControl('', { nonNullable: true, validators: [Validators.required] }) });
   readonly cancelForm = new FormGroup({ reason: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(2000)] }) });
@@ -40,6 +43,10 @@ export class PaymentDetail {
   schedule() { if (this.scheduleForm.invalid) return; this.execute(() => this.api.schedule(this.id, new Date(this.scheduleForm.getRawValue().scheduled_at).toISOString()), 'agendamento'); }
   confirm() { if (this.confirmForm.invalid || !window.confirm('Confirmar definitivamente este pagamento?')) return; const value = this.confirmForm.getRawValue(); this.execute(() => this.api.confirm(this.id, { paid_at: new Date(value.paid_at).toISOString(), paid_amount: value.paid_amount.replace(',', '.'), payment_method: value.payment_method as PaymentMethod }), 'confirmação'); }
   cancel() { if (this.cancelForm.invalid || !window.confirm('Cancelar este pagamento?')) return; this.execute(() => this.api.cancel(this.id, this.cancelForm.getRawValue().reason.trim()), 'cancelamento'); }
+  uploadReceipts(event: Event) { const files = Array.from((event.target as HTMLInputElement).files || []); const invalid = files.find(file => file.size > 10 * 1024 * 1024 || !/\.(pdf|docx?|xlsx?|txt|png|jpe?g)$/i.test(file.name)); if (!files.length || invalid) { this.receiptError.set(invalid ? `O arquivo ${invalid.name} possui extensão ou tamanho inválido.` : 'Selecione ao menos um arquivo.'); return; } this.saving.set(true); this.receiptError.set(''); from(files).pipe(concatMap(file => this.api.addReceipt(this.id, file)), toArray(), finalize(() => this.saving.set(false))).subscribe({ next: () => this.loadReceipts(), error: () => { this.receiptError.set('Parte do envio pode ter sido concluída. Atualize os comprovantes antes de tentar novamente.'); this.loadReceipts(); } }); }
+  downloadReceipt(receipt: PaymentReceipt) { this.api.downloadReceipt(receipt.attachment.id).subscribe({ next: blob => { const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = receipt.attachment.file_name || 'comprovante'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60_000); }, error: () => this.receiptError.set('Não foi possível baixar o comprovante.') }); }
+  deactivateReceipt(receipt: PaymentReceipt) { if (!window.confirm('Inativar este comprovante? O arquivo será preservado no histórico.')) return; this.api.deactivateReceipt(receipt.attachment.id).subscribe({ next: () => this.loadReceipts(), error: () => this.receiptError.set('Não foi possível inativar o comprovante.') }); }
   private execute(request: () => ReturnType<PaymentService['get']>, label: string) { this.saving.set(true); this.error.set(''); request().pipe(finalize(() => this.saving.set(false))).subscribe({ next: item => { this.payment.set(item); this.action.set(null); }, error: response => { if (response?.status === 409) this.load(); this.error.set(response?.status === 409 ? 'O pagamento já foi alterado. Os dados foram recarregados; revise antes de tentar novamente.' : response?.status === 403 ? 'Você não possui permissão para esta ação.' : `Não foi possível concluir o ${label}.`); } }); }
-  private load() { this.api.get(this.id).subscribe({ next: item => { this.payment.set(item); this.confirmForm.patchValue({ paid_amount: item.amount }); }, error: response => this.error.set(response?.status === 403 ? 'Você não possui acesso aos dados financeiros.' : 'Pagamento não encontrado ou fora do seu escopo.') }); }
+  private load() { this.api.get(this.id).subscribe({ next: item => { this.payment.set(item); this.confirmForm.patchValue({ paid_amount: item.amount }); this.loadReceipts(); }, error: response => this.error.set(response?.status === 403 ? 'Você não possui acesso aos dados financeiros.' : 'Pagamento não encontrado ou fora do seu escopo.') }); }
+  private loadReceipts() { this.api.receipts(this.id).subscribe({ next: items => this.receipts.set(items), error: () => this.receiptError.set('Não foi possível carregar os comprovantes.') }); }
 }

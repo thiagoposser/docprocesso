@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
+from apps.documents.models import DocumentRole
 from apps.documents.serializers import ProcessDocumentSerializer
 from apps.documents.services import create_process_document
 
@@ -227,7 +228,7 @@ class ProcessViewSet(
         if request.method == "GET":
             if not request.user.has_perm("documents.view_document"):
                 self.permission_denied(request)
-            queryset = process.documents.select_related("category", "created_by").prefetch_related("attachments")
+            queryset = process.documents.exclude(role=DocumentRole.PAYMENT_RECEIPT).select_related("category", "created_by").prefetch_related("attachments")
             page = self.paginate_queryset(queryset)
             serializer = self.get_serializer(page if page is not None else queryset, many=True)
             return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
