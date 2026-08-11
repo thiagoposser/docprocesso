@@ -2,7 +2,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -11,6 +13,20 @@ from rest_framework.test import APITestCase
 from apps.sectors.models import Sector, UserSectorMembership
 
 from .models import AdministrativeProcess, ProcessMovement, ProcessMovementAction, ProcessStatus, ProcessType
+from .services import (
+    InvalidProcessDestination,
+    InvalidProcessTransition,
+    ProcessAccessDenied,
+    ProcessConflictError,
+    archive_process,
+    cancel_process,
+    complete_process,
+    forward_process,
+    open_process,
+    receive_process,
+    reopen_process,
+    return_process,
+)
 
 
 class AdministrativeProcessModelTests(TestCase):
@@ -268,3 +284,94 @@ class ProcessMovementModelTests(TestCase):
     def test_declares_expected_indexes(self):
         names = {index.name for index in ProcessMovement._meta.indexes}
         self.assertEqual(names, {"movement_process_date_idx", "movement_from_date_idx", "movement_to_date_idx", "movement_action_date_idx"})
+
+
+class ProcessWorkflowServiceTests(TestCase):
+    def setUp(self):
+        users = get_user_model()
+        self.actor = users.objects.create_user(username="workflow_actor")
+        self.outsider = users.objects.create_user(username="workflow_outsider")
+        self.origin = Sector.objects.create(name="Fluxo origem", code="FLOW-O")
+        self.destination = Sector.objects.create(name="Fluxo destino", code="FLOW-D")
+        UserSectorMembership.objects.create(user=self.actor, sector=self.origin, active=True, is_primary=True, is_manager=True)
+        UserSectorMembership.objects.create(user=self.actor, sector=self.destination, active=True, is_manager=True)
+        process_type = ProcessType.objects.create(name="Fluxo", code="fluxo")
+        self.process = AdministrativeProcess.objects.create(
+            title="Fluxo completo",
+            process_type=process_type,
+            created_by=self.actor,
+            origin_sector=self.origin,
+        )
+        codenames = [
+            "open_administrativeprocess", "forward_administrativeprocess", "receive_administrativeprocess",
+            "return_administrativeprocess", "complete_administrativeprocess", "reopen_administrativeprocess",
+            "cancel_administrativeprocess", "archive_administrativeprocess",
+        ]
+        permissions = Permission.objects.filter(codename__in=codenames)
+        self.actor.user_permissions.add(*permissions)
+        self.outsider.user_permissions.add(*permissions)
+
+    def test_complete_workflow_updates_state_version_dates_and_movements_atomically(self):
+        process = open_process(process_id=self.process.pk, actor=self.actor, expected_version=1)
+        self.assertEqual((process.status, process.current_sector, process.version), (ProcessStatus.OPEN, self.origin, 2))
+        self.assertIsNotNone(process.opened_at)
+        process = forward_process(process_id=process.pk, actor=self.actor, destination=self.destination, expected_version=2)
+        process = receive_process(process_id=process.pk, actor=self.actor, expected_version=3)
+        process = complete_process(process_id=process.pk, actor=self.actor, expected_version=4)
+        self.assertEqual(process.status, ProcessStatus.COMPLETED)
+        self.assertIsNotNone(process.completed_at)
+        process = reopen_process(process_id=process.pk, actor=self.actor, expected_version=5, note="Necessário complementar")
+        self.assertEqual(process.status, ProcessStatus.IN_PROGRESS)
+        self.assertIsNone(process.completed_at)
+        process = return_process(process_id=process.pk, actor=self.actor, destination=self.origin, expected_version=6, note="Corrigir dados")
+        process = receive_process(process_id=process.pk, actor=self.actor, expected_version=7)
+        process = cancel_process(process_id=process.pk, actor=self.actor, expected_version=8, note="Demanda cancelada")
+        process = archive_process(process_id=process.pk, actor=self.actor, expected_version=9)
+
+        self.assertEqual((process.status, process.version), (ProcessStatus.ARCHIVED, 10))
+        self.assertIsNotNone(process.archived_at)
+        self.assertEqual(
+            list(process.movements.values_list("action", flat=True)),
+            ["OPEN", "FORWARD", "RECEIVE", "COMPLETE", "REOPEN", "RETURN", "RECEIVE", "CANCEL", "ARCHIVE"],
+        )
+
+    def test_rejects_stale_version_and_duplicate_action(self):
+        process = open_process(process_id=self.process.pk, actor=self.actor, expected_version=1)
+        with self.assertRaises(ProcessConflictError):
+            forward_process(process_id=process.pk, actor=self.actor, destination=self.destination, expected_version=1)
+        with self.assertRaises(InvalidProcessTransition):
+            open_process(process_id=process.pk, actor=self.actor, expected_version=2)
+        self.assertEqual(ProcessMovement.objects.count(), 1)
+
+    def test_rejects_access_outside_sector_and_invalid_destination(self):
+        with self.assertRaises(ProcessAccessDenied):
+            open_process(process_id=self.process.pk, actor=self.outsider, expected_version=1)
+        open_process(process_id=self.process.pk, actor=self.actor, expected_version=1)
+        with self.assertRaises(InvalidProcessDestination):
+            forward_process(process_id=self.process.pk, actor=self.actor, destination=self.origin, expected_version=2)
+        self.destination.active = False
+        self.destination.save()
+        with self.assertRaises(InvalidProcessDestination):
+            forward_process(process_id=self.process.pk, actor=self.actor, destination=self.destination, expected_version=2)
+
+    def test_receive_requires_a_pending_transfer(self):
+        open_process(process_id=self.process.pk, actor=self.actor, expected_version=1)
+        with self.assertRaises(InvalidProcessTransition):
+            receive_process(process_id=self.process.pk, actor=self.actor, expected_version=2)
+
+    def test_movement_failure_rolls_back_process_change(self):
+        from unittest.mock import patch
+
+        with patch("apps.processes.services.ProcessMovement.objects.create", side_effect=RuntimeError("movement failure")):
+            with self.assertRaises(RuntimeError):
+                open_process(process_id=self.process.pk, actor=self.actor, expected_version=1)
+
+        self.process.refresh_from_db()
+        self.assertEqual((self.process.status, self.process.current_sector, self.process.version), (ProcessStatus.DRAFT, None, 1))
+        self.assertFalse(ProcessMovement.objects.exists())
+
+    def test_action_acquires_row_lock(self):
+        with CaptureQueriesContext(connection) as queries:
+            open_process(process_id=self.process.pk, actor=self.actor, expected_version=1)
+
+        self.assertTrue(any("FOR UPDATE" in query["sql"].upper() for query in queries.captured_queries))
