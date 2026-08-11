@@ -8,6 +8,7 @@ from rest_framework.response import Response
 
 from apps.audit.mixins import AuditedWriteMixin
 
+from .deadline_services import generate_deadline_notifications
 from .models import Payment, PaymentStatus, Supplier
 from .permissions import PaymentPermission, SupplierPermission
 from .serializers import PaymentCancelSerializer, PaymentConfirmSerializer, PaymentReceiptSerializer, PaymentReceiptUploadSerializer, PaymentScheduleSerializer, PaymentSerializer, SupplierSerializer
@@ -60,6 +61,11 @@ class PaymentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMode
         if params.get("status"):
             if params["status"] not in PaymentStatus.values: raise ValidationError({"status": "Informe um status válido."})
             queryset = queryset.filter(status=params["status"])
+        if params.get("deadline"):
+            try:
+                queryset = queryset.with_deadline(params["deadline"])
+            except ValueError as error:
+                raise ValidationError({"deadline": "Use overdue, today ou upcoming."}) from error
         for parameter, lookup in {"due_from": "due_date__gte", "due_to": "due_date__lte"}.items():
             if params.get(parameter):
                 value = parse_date(params[parameter])
@@ -71,6 +77,15 @@ class PaymentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMode
                 except InvalidOperation as error: raise ValidationError({parameter: "Informe um valor decimal válido."}) from error
                 queryset = queryset.filter(**{lookup: value})
         return queryset
+
+    @action(detail=False, methods=["get"], url_path="deadline-summary")
+    def deadline_summary(self, request):
+        generate_deadline_notifications(user=request.user)
+        queryset = self.get_queryset()
+        return Response({
+            deadline: queryset.with_deadline(deadline).count()
+            for deadline in ("overdue", "today", "upcoming")
+        })
 
     def _execute_action(self, request, service):
         payment = self.get_object()

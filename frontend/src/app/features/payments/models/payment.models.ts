@@ -8,7 +8,9 @@ export interface Payment { id: number; process: number; process_number: string; 
 export interface PaymentPayload { process: number; document?: number | null; sector: number; supplier: number; description: string; amount: string; due_date: string; }
 export interface ReceiptAttachment { id: number; file_name: string | null; download_url: string | null; source_type: 'file' | 'external_url'; active: boolean; created_at: string; deactivated_at: string | null; }
 export interface PaymentReceipt { id: number; payment: number; attachment: ReceiptAttachment; created_by: number; created_at: string; }
-export interface PaymentQuery { search?: string; process?: string; status?: string; sector?: string; supplier?: string; dueFrom?: string; dueTo?: string; minAmount?: string; maxAmount?: string; ordering?: string; page?: number; }
+export type PaymentDeadline = 'overdue' | 'today' | 'upcoming';
+export interface PaymentDeadlineSummary { overdue: number; today: number; upcoming: number; }
+export interface PaymentQuery { search?: string; process?: string; status?: string; deadline?: string; sector?: string; supplier?: string; dueFrom?: string; dueTo?: string; minAmount?: string; maxAmount?: string; ordering?: string; page?: number; }
 export type PaymentPage = PaginatedResponse<Payment>;
 export type SupplierPage = PaginatedResponse<Supplier>;
 
