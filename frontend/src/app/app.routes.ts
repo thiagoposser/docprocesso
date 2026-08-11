@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { adminGuard, auditGuard, authGuard, paymentAddGuard, paymentChangeGuard, paymentViewGuard, processAddGuard, processChangeGuard, processViewGuard, sectorGuard } from './core/guards/auth.guard';
+import { adminGuard, auditGuard, authGuard, paymentAddGuard, paymentChangeGuard, paymentViewGuard, processAddGuard, processChangeGuard, processViewGuard, reportsGuard, sectorGuard } from './core/guards/auth.guard';
 import { authResolver } from './core/resolvers/auth.resolver';
 
 export const routes: Routes = [
@@ -13,6 +13,7 @@ export const routes: Routes = [
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', title: 'Dashboard', data: { breadcrumb: 'Dashboard' }, loadComponent: () => import('./features/dashboard/dashboard').then(m => m.Dashboard) },
+      { path: 'relatorios', title: 'Relatórios', canActivate: [reportsGuard], data: { breadcrumb: 'Relatórios' }, loadComponent: () => import('./features/reports/pages/report-dashboard/report-dashboard').then(m => m.ReportDashboard) },
       { path: 'processos', title: 'Processos', canActivate: [processViewGuard], data: { breadcrumb: 'Processos' }, loadComponent: () => import('./features/processes/pages/process-list/process-list').then(m => m.ProcessList) },
       { path: 'processos/novo', title: 'Novo processo', canActivate: [processAddGuard], data: { breadcrumb: 'Novo processo' }, loadComponent: () => import('./features/processes/pages/process-form/process-form').then(m => m.ProcessForm) },
       { path: 'processos/:id/editar', title: 'Editar processo', canActivate: [processChangeGuard], data: { breadcrumb: 'Editar processo' }, loadComponent: () => import('./features/processes/pages/process-form/process-form').then(m => m.ProcessForm) },
