@@ -1,16 +1,16 @@
-import { DatePipe } from '@angular/common';
+import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { APPLICATION_CONFIG } from '../../core/config/application.config';
 import { AuthService } from '../../core/auth/auth.service';
-import { DashboardSummary } from '../../core/models/application.models';
+import { DashboardSummary, FinancialDashboardSummary, ProcessDashboardSummary } from '../../core/models/application.models';
 import { DashboardService } from '../../core/services/dashboard.service';
 import { AppIcon } from '../../shared/components/app-icon/app-icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 
 @Component({
   selector: 'app-dashboard',
-  imports: [RouterLink, DatePipe, AppIcon, PageHeader],
+  imports: [RouterLink, CurrencyPipe, DatePipe, AppIcon, PageHeader],
   template: `
     <app-page-header title="Visão geral" [description]="'Bom dia, ' + firstName + '. Aqui está o resumo do seu workspace.'">
       <span class="demo-label"><span></span> Dados atualizados pela API</span>
@@ -22,6 +22,8 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
       <article class="metric"><div class="metric-top"><span>Status da API</span><span class="status-dot" [class.offline]="summary()?.api_status !== 'operational'"></span></div><strong class="status-value" [class.text-danger]="summary()?.api_status !== 'operational'">{{ summary()?.api_status === 'operational' ? 'Operacional' : 'Indisponível' }}</strong><small>Health check autenticado</small></article>
       <article class="metric"><div class="metric-top"><span>Ambiente</span><span class="environment-dot"></span></div><strong>{{ summary()?.environment ?? config.environment }}</strong><small>Versão {{ summary()?.version ?? '—' }}</small></article>
     </div>
+
+    @if (processes(); as processTotals) { <div class="metrics-grid mb-4"><article class="metric"><div class="metric-top"><span>Processos em andamento</span></div><strong>{{ processTotals.in_progress }}</strong><small>No seu escopo setorial</small></article><article class="metric"><div class="metric-top"><span>Processos concluídos</span></div><strong>{{ processTotals.completed }}</strong><small>No seu escopo setorial</small></article>@if (financial(); as finance) { <article class="metric"><div class="metric-top"><span>Pagamentos pendentes</span></div><strong>{{ finance.pending }}</strong><small>{{ finance.pending_total | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</small></article><article class="metric"><div class="metric-top"><span>Pagamentos vencidos</span></div><strong class="text-danger">{{ finance.overdue }}</strong><small>{{ finance.due_this_month }} vencem neste mês</small></article> }</div> }
 
     <div class="row g-4">
       <div class="col-12 col-xl-7">
@@ -50,5 +52,7 @@ export class Dashboard {
   readonly auth = inject(AuthService);
   readonly firstName = this.auth.user()?.name.split(' ')[0] || 'Usuário';
   readonly summary = signal<DashboardSummary | null>(null);
-  constructor() { this.service.summary().subscribe({ next: summary => this.summary.set(summary) }); }
+  readonly processes = signal<ProcessDashboardSummary | null>(null);
+  readonly financial = signal<FinancialDashboardSummary | null>(null);
+  constructor() { this.service.summary().subscribe({ next: summary => this.summary.set(summary) }); if(this.auth.can('processes.view_administrativeprocess'))this.service.processes().subscribe({next:summary=>this.processes.set(summary)}); if(this.auth.can('payments.view_financial_data'))this.service.financial().subscribe({next:summary=>this.financial.set(summary)}); }
 }

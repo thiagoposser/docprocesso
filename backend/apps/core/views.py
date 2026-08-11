@@ -1,6 +1,7 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -11,7 +12,7 @@ from apps.audit.models import AuditAction
 from apps.audit.services import record_audit, snapshot
 from apps.notifications.models import NotificationLevel, NotificationType
 from apps.notifications.services import NotificationService
-from .services import dashboard_summary
+from .services import dashboard_summary, financial_dashboard_summary, process_dashboard_summary
 
 
 @api_view(["GET"])
@@ -25,6 +26,22 @@ def health_check(request):
 @permission_classes([IsAuthenticated])
 def dashboard(request):
     return Response(dashboard_summary(request.user))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def process_dashboard(request):
+    if not request.user.has_perm("processes.view_administrativeprocess"):
+        raise PermissionDenied("Você não possui permissão para visualizar processos.")
+    return Response(process_dashboard_summary(request.user))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def financial_dashboard(request):
+    if not request.user.has_perms(("payments.view_payment", "payments.view_financial_data")):
+        raise PermissionDenied("Você não possui permissão para visualizar dados financeiros.")
+    return Response(financial_dashboard_summary(request.user))
 
 
 class PublicSettingsView(RetrieveUpdateAPIView):
