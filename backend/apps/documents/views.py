@@ -1,6 +1,6 @@
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
-from django.http import FileResponse, Http404, HttpResponseRedirect
+from django.http import FileResponse, Http404
 from django.db.models import Q
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.exceptions import ValidationError
@@ -155,7 +155,7 @@ class AttachmentViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
         )
         if attachment.file:
             return FileResponse(attachment.file.open("rb"), as_attachment=True, filename=attachment.original_file_name or None)
-        return HttpResponseRedirect(attachment.external_url)
+        return Response({"external_url": attachment.external_url})
 
     @action(detail=True, methods=["patch"])
     def deactivate(self, request, pk=None):

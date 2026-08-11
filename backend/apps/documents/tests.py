@@ -228,6 +228,13 @@ class ProcessDocumentApiTests(APITestCase):
         self.assertIsNotNone(attachment.deactivated_at)
         self.assertEqual(self.client.get(reverse("attachment-download", args=[attachment.pk])).status_code, status.HTTP_404_NOT_FOUND)
 
+        external = Attachment.objects.create(
+            document=document, external_url="https://example.com/autorizado", created_by=self.user,
+        )
+        external_download = self.client.get(reverse("attachment-download", args=[external.pk]))
+        self.assertEqual(external_download.status_code, status.HTTP_200_OK)
+        self.assertEqual(external_download.data, {"external_url": "https://example.com/autorizado"})
+
     def test_sector_isolation_prevents_idor_for_documents_and_downloads(self):
         document = Document.objects.create(
             title="Documento restrito", category=self.category, process=self.process, created_by=self.user,
