@@ -1,6 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { PaginatedResponse, UserItem, UserPayload } from '../../../../core/models/application.models';
+import { PaginatedResponse, UserItem, UserPayload, UserSectorMembership } from '../../../../core/models/application.models';
 
 @Injectable({ providedIn: 'root' })
 export class UserService {
@@ -14,4 +14,7 @@ export class UserService {
   get(id: number) { return this.http.get<UserItem>(`/api/users/${id}/`); }
   create(payload: UserPayload) { return this.http.post<UserItem>('/api/users/', payload); }
   update(id: number, payload: Partial<UserPayload>) { return this.http.patch<UserItem>(`/api/users/${id}/`, payload); }
+  memberships(user: number) { return this.http.get<PaginatedResponse<UserSectorMembership>>('/api/user-sector-memberships/', { params: { user, active: 'true' } }); }
+  addMembership(payload: {user:number;sector:number;active:boolean;is_primary:boolean;is_manager:boolean}) { return this.http.post<UserSectorMembership>('/api/user-sector-memberships/', payload); }
+  updateMembership(id: number, payload: Partial<UserSectorMembership>) { return this.http.patch<UserSectorMembership>(`/api/user-sector-memberships/${id}/`, payload); }
 }

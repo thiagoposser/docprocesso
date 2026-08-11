@@ -235,3 +235,38 @@ class UserSectorMembershipTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["sector_memberships"]), 1)
         self.assertEqual(response.data["sector_memberships"][0]["sector"], self.first.pk)
+
+
+class UserSectorMembershipApiTests(APITestCase):
+    def setUp(self):
+        users = get_user_model()
+        self.admin = users.objects.create_user(username="membership_admin", is_staff=True)
+        self.user = users.objects.create_user(username="membership_user")
+        self.other = users.objects.create_user(username="membership_other")
+        self.first = Sector.objects.create(name="API Primeiro", code="API1")
+        self.second = Sector.objects.create(name="API Segundo", code="API2")
+        self.mine = UserSectorMembership.objects.create(user=self.user, sector=self.first, is_primary=True)
+        self.theirs = UserSectorMembership.objects.create(user=self.other, sector=self.second)
+
+    def test_regular_user_only_reads_own_active_memberships(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.get(reverse("user-sector-membership-list"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([item["id"] for item in response.data["results"]], [self.mine.pk])
+        self.assertEqual(self.client.get(reverse("user-sector-membership-detail", args=[self.theirs.pk])).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(self.client.post(reverse("user-sector-membership-list"), {}).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_creates_filters_updates_and_cannot_delete_membership(self):
+        self.client.force_authenticate(self.admin)
+        created = self.client.post(reverse("user-sector-membership-list"), {"user": self.user.pk, "sector": self.second.pk, "active": True, "is_primary": True, "is_manager": True}, format="json")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        self.mine.refresh_from_db()
+        self.assertFalse(self.mine.is_primary)
+        listed = self.client.get(reverse("user-sector-membership-list"), {"user": self.user.pk, "active": "true"})
+        self.assertEqual(listed.data["count"], 2)
+        detail = reverse("user-sector-membership-detail", args=[created.data["id"]])
+        self.assertEqual(self.client.patch(detail, {"active": False, "is_primary": False}, format="json").status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.delete(detail).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def test_unauthenticated_access_is_rejected(self):
+        self.assertEqual(self.client.get(reverse("user-sector-membership-list")).status_code, status.HTTP_401_UNAUTHORIZED)
