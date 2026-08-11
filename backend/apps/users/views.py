@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Prefetch
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -15,6 +16,7 @@ from apps.audit.models import AuditAction
 from apps.audit.services import record_audit
 from apps.notifications.models import NotificationLevel, NotificationType
 from apps.notifications.services import NotificationService
+from apps.sectors.models import UserSectorMembership
 
 User = get_user_model()
 
@@ -70,7 +72,14 @@ class MeView(APIView):
 
 
 class UserViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
-    queryset = User.objects.prefetch_related("groups").all()
+    queryset = User.objects.prefetch_related(
+        "groups",
+        Prefetch(
+            "sector_memberships",
+            queryset=UserSectorMembership.objects.filter(active=True).select_related("sector").order_by("-is_primary", "sector__name"),
+            to_attr="active_sector_memberships",
+        ),
+    ).all()
     permission_classes = [IsAdministrator]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["first_name", "last_name", "username", "email"]

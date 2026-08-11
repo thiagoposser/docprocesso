@@ -12,8 +12,10 @@ export interface UserPayload {
 export interface AuthUser {
   id: number; name: string; first_name: string; last_name: string; username: string;
   email: string; is_active: boolean; is_staff: boolean; groups: string[];
-  permissions: string[]; photo_url: string | null; last_login: string | null; date_joined: string;
+  permissions: string[]; photo_url: string | null; sector_memberships: UserSectorMembershipSummary[]; last_login: string | null; date_joined: string;
 }
+
+export interface UserSectorMembershipSummary { id: number; sector: number; sector_name: string; sector_code: string | null; is_primary: boolean; is_manager: boolean; }
 
 export interface TokenPair { access: string; refresh: string; }
 export interface LoginResponse extends TokenPair { user: AuthUser; }

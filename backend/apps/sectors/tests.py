@@ -7,7 +7,8 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Sector
+from .membership_services import save_membership
+from .models import Sector, UserSectorMembership
 
 
 class SectorModelTests(TestCase):
@@ -153,3 +154,84 @@ class SectorApiTests(APITestCase):
 
     def test_requires_authentication_for_reading(self):
         self.assertEqual(self.client.get(reverse("sector-list")).status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class UserSectorMembershipTests(APITestCase):
+    def setUp(self):
+        users = get_user_model()
+        self.user = users.objects.create_user(username="member_user")
+        self.other_user = users.objects.create_user(username="other_member")
+        self.first = Sector.objects.create(name="Primeiro", code="FIRST")
+        self.second = Sector.objects.create(name="Segundo", code="SECOND")
+
+    def test_user_can_belong_to_multiple_sectors_with_one_active_primary(self):
+        primary = UserSectorMembership.objects.create(user=self.user, sector=self.first, is_primary=True)
+        secondary = UserSectorMembership.objects.create(user=self.user, sector=self.second, is_manager=True)
+
+        self.assertTrue(primary.is_primary)
+        self.assertFalse(secondary.is_primary)
+        self.assertTrue(secondary.is_manager)
+        secondary.is_primary = True
+        with self.assertRaises(ValidationError):
+            secondary.save()
+
+    def test_service_changes_primary_without_losing_membership_history(self):
+        old = UserSectorMembership.objects.create(user=self.user, sector=self.first, is_primary=True)
+        new = UserSectorMembership.objects.create(user=self.user, sector=self.second)
+
+        save_membership(new, is_primary=True)
+        old.refresh_from_db()
+
+        self.assertFalse(old.is_primary)
+        self.assertTrue(new.is_primary)
+        self.assertEqual(UserSectorMembership.objects.count(), 2)
+
+    def test_primary_must_be_active_and_user_sector_pair_is_unique(self):
+        UserSectorMembership.objects.create(user=self.user, sector=self.first)
+        with self.assertRaises(ValidationError):
+            UserSectorMembership.objects.create(user=self.user, sector=self.first)
+        with self.assertRaises(ValidationError):
+            UserSectorMembership.objects.create(user=self.user, sector=self.second, active=False, is_primary=True)
+
+    def test_inactive_user_or_sector_cannot_receive_active_membership(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+        with self.assertRaisesMessage(ValidationError, "usuário inativo"):
+            UserSectorMembership.objects.create(user=self.user, sector=self.first)
+
+        self.second.active = False
+        self.second.save()
+        with self.assertRaisesMessage(ValidationError, "setor inativo"):
+            UserSectorMembership.objects.create(user=self.other_user, sector=self.second)
+
+    def test_inactivation_preserves_membership_and_allows_legacy_users_without_one(self):
+        membership = UserSectorMembership.objects.create(user=self.user, sector=self.first)
+        membership.active = False
+        membership.save()
+
+        self.assertTrue(UserSectorMembership.objects.filter(pk=membership.pk, active=False).exists())
+        self.assertFalse(self.other_user.sector_memberships.exists())
+
+    def test_inactive_historical_membership_can_be_edited_but_not_reactivated_with_inactive_references(self):
+        membership = UserSectorMembership.objects.create(user=self.user, sector=self.first)
+        membership.active = False
+        membership.save()
+        self.first.active = False
+        self.first.save()
+
+        membership.is_manager = True
+        membership.save()
+        membership.active = True
+        with self.assertRaisesMessage(ValidationError, "setor inativo"):
+            membership.save()
+
+    def test_current_user_response_adds_only_active_memberships(self):
+        UserSectorMembership.objects.create(user=self.user, sector=self.first, is_primary=True)
+        UserSectorMembership.objects.create(user=self.user, sector=self.second, active=False)
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get(reverse("auth-me"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["sector_memberships"]), 1)
+        self.assertEqual(response.data["sector_memberships"][0]["sector"], self.first.pk)
