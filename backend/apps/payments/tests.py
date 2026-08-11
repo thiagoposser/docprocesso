@@ -4,9 +4,10 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models.deletion import ProtectedError
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -16,7 +17,7 @@ from apps.documents.models import Document, DocumentCategory
 from apps.processes.models import AdministrativeProcess, ProcessType
 from apps.sectors.models import Sector, UserSectorMembership
 
-from .models import Payment, PaymentStatus, Supplier
+from .models import Payment, PaymentMethod, PaymentStatus, Supplier
 
 
 class PaymentModelTests(TestCase):
@@ -59,6 +60,7 @@ class PaymentModelTests(TestCase):
         payment.status = PaymentStatus.PAID
         payment.paid_at = timezone.now()
         payment.paid_amount = payment.amount
+        payment.payment_method = PaymentMethod.PIX
         payment.paid_by = self.user
         payment.save()
         self.assertFalse(payment.is_overdue)
@@ -98,7 +100,7 @@ class PaymentModelTests(TestCase):
 
     def test_declares_financial_permissions(self):
         codenames = set(Permission.objects.filter(content_type__app_label="payments").values_list("codename", flat=True))
-        self.assertTrue({"view_payment", "add_payment", "change_payment", "view_financial_data", "confirm_payment"}.issubset(codenames))
+        self.assertTrue({"view_payment", "add_payment", "change_payment", "view_financial_data", "confirm_payment", "schedule_payment", "cancel_payment"}.issubset(codenames))
 
 
 class PaymentApiTests(APITestCase):
@@ -122,6 +124,7 @@ class PaymentApiTests(APITestCase):
         finance_permissions = Permission.objects.filter(codename__in={
             "view_administrativeprocess", "view_supplier", "add_supplier", "change_supplier",
             "view_payment", "add_payment", "change_payment", "view_financial_data",
+            "schedule_payment", "confirm_payment", "cancel_payment",
         })
         self.user.user_permissions.add(*finance_permissions)
         self.outsider.user_permissions.add(*finance_permissions)
@@ -196,3 +199,97 @@ class PaymentApiTests(APITestCase):
     def test_payment_requires_financial_and_process_permissions(self):
         self.client.force_authenticate(self.masked_user)
         self.assertEqual(self.client.get(reverse("payment-list")).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_schedule_confirm_and_retry_are_atomic_and_traced(self):
+        payment = Payment.objects.create(
+            process=self.process, sector=self.sector, supplier=self.supplier, created_by=self.user,
+            description="Fluxo", amount=Decimal("100.00"), due_date=timezone.localdate() + timedelta(days=5),
+        )
+        self.client.force_authenticate(self.user)
+        scheduled = self.client.post(
+            reverse("payment-schedule", args=[payment.pk]),
+            {"scheduled_at": (timezone.now() + timedelta(days=1)).isoformat()}, format="json",
+        )
+        self.assertEqual(scheduled.status_code, status.HTTP_200_OK, scheduled.data)
+        confirmed = self.client.post(
+            reverse("payment-confirm", args=[payment.pk]),
+            {"paid_at": timezone.now().isoformat(), "paid_amount": "100.00", "payment_method": PaymentMethod.PIX}, format="json",
+        )
+        self.assertEqual(confirmed.status_code, status.HTTP_200_OK, confirmed.data)
+        self.assertEqual(confirmed.data["status"], PaymentStatus.PAID)
+        event_count = self.process.events.count()
+        retry = self.client.post(
+            reverse("payment-confirm", args=[payment.pk]),
+            {"paid_at": timezone.now().isoformat(), "paid_amount": "100.00", "payment_method": PaymentMethod.PIX}, format="json",
+        )
+        self.assertEqual(retry.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(self.process.events.count(), event_count)
+
+    def test_cancel_requires_reason_and_terminal_process_policy_is_explicit(self):
+        payment = Payment.objects.create(
+            process=self.process, sector=self.sector, supplier=self.supplier, created_by=self.user,
+            description="Cancelar", amount=Decimal("10.00"), due_date=timezone.localdate() + timedelta(days=2),
+        )
+        self.client.force_authenticate(self.user)
+        self.assertEqual(self.client.post(reverse("payment-cancel", args=[payment.pk]), {"reason": ""}, format="json").status_code, status.HTTP_400_BAD_REQUEST)
+        cancelled = self.client.post(reverse("payment-cancel", args=[payment.pk]), {"reason": "Duplicidade"}, format="json")
+        self.assertEqual(cancelled.status_code, status.HTTP_200_OK)
+        self.assertEqual(cancelled.data["cancellation_reason"], "Duplicidade")
+
+        blocked = Payment.objects.create(
+            process=self.process, sector=self.sector, supplier=self.supplier, created_by=self.user,
+            description="Bloqueado", amount=Decimal("10.00"), due_date=timezone.localdate() + timedelta(days=2),
+        )
+        self.process.status = "ARCHIVED"; self.process.archived_at = timezone.now(); self.process.save()
+        response = self.client.post(
+            reverse("payment-schedule", args=[blocked.pk]),
+            {"scheduled_at": (timezone.now() + timedelta(days=1)).isoformat()}, format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_event_failure_rolls_back_confirmation(self):
+        from unittest.mock import patch
+        from .services import confirm_payment
+
+        payment = Payment.objects.create(
+            process=self.process, sector=self.sector, supplier=self.supplier, created_by=self.user,
+            description="Rollback", amount=Decimal("75.00"), due_date=timezone.localdate() + timedelta(days=2),
+        )
+        with patch("apps.payments.services.append_process_event", side_effect=RuntimeError("event failure")):
+            with self.assertRaises(RuntimeError):
+                confirm_payment(
+                    payment_id=payment.pk, actor=self.user, paid_at=timezone.now(),
+                    paid_amount=Decimal("75.00"), payment_method=PaymentMethod.BANK_TRANSFER,
+                )
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, PaymentStatus.PENDING)
+        self.assertIsNone(payment.paid_at)
+
+    def test_action_locks_payment_row_and_requires_specific_permission(self):
+        from .services import schedule_payment
+
+        payment = Payment.objects.create(
+            process=self.process, sector=self.sector, supplier=self.supplier, created_by=self.user,
+            description="Lock", amount=Decimal("20.00"), due_date=timezone.localdate() + timedelta(days=2),
+        )
+        with CaptureQueriesContext(connection) as queries:
+            schedule_payment(
+                payment_id=payment.pk, actor=self.user,
+                scheduled_at=timezone.now() + timedelta(days=1),
+            )
+        self.assertTrue(any("FOR UPDATE" in query["sql"].upper() for query in queries.captured_queries))
+
+        limited = get_user_model().objects.create_user(username="finance_limited")
+        UserSectorMembership.objects.create(user=limited, sector=self.sector, is_primary=True)
+        limited.user_permissions.add(*Permission.objects.filter(codename__in={
+            "view_administrativeprocess", "view_payment", "view_financial_data",
+        }))
+        self.client.force_authenticate(limited)
+        self.assertEqual(
+            self.client.post(
+                reverse("payment-confirm", args=[payment.pk]),
+                {"paid_at": timezone.now().isoformat(), "paid_amount": "20.00", "payment_method": PaymentMethod.PIX},
+                format="json",
+            ).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )

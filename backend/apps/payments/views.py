@@ -1,14 +1,17 @@
 from decimal import Decimal, InvalidOperation
 
 from django.utils.dateparse import parse_date
-from rest_framework import filters, mixins, viewsets
-from rest_framework.exceptions import ValidationError
+from rest_framework import filters, mixins, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.response import Response
 
 from apps.audit.mixins import AuditedWriteMixin
 
 from .models import Payment, PaymentStatus, Supplier
 from .permissions import PaymentPermission, SupplierPermission
-from .serializers import PaymentSerializer, SupplierSerializer
+from .serializers import PaymentCancelSerializer, PaymentConfirmSerializer, PaymentScheduleSerializer, PaymentSerializer, SupplierSerializer
+from .services import InvalidPaymentTransition, PaymentAccessDenied, PaymentConflictError, cancel_payment, confirm_payment, schedule_payment
 
 
 class SupplierViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
@@ -35,6 +38,13 @@ class PaymentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMode
     audit_label = "pagamento"
     audit_fields = ("process", "sector", "supplier", "description", "due_date", "status")
 
+    def get_serializer_class(self):
+        return {
+            "schedule": PaymentScheduleSerializer,
+            "confirm": PaymentConfirmSerializer,
+            "cancel": PaymentCancelSerializer,
+        }.get(self.action, PaymentSerializer)
+
     def get_queryset(self):
         queryset = Payment.objects.select_related("process", "document", "sector", "supplier", "created_by", "paid_by")
         user = self.request.user
@@ -60,3 +70,29 @@ class PaymentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMode
                 except InvalidOperation as error: raise ValidationError({parameter: "Informe um valor decimal válido."}) from error
                 queryset = queryset.filter(**{lookup: value})
         return queryset
+
+    def _execute_action(self, request, service):
+        payment = self.get_object()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated = service(payment_id=payment.pk, actor=request.user, **serializer.validated_data)
+        except PaymentConflictError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_409_CONFLICT)
+        except PaymentAccessDenied as error:
+            raise PermissionDenied(str(error)) from error
+        except InvalidPaymentTransition as error:
+            raise ValidationError({"detail": str(error)}) from error
+        return Response(PaymentSerializer(updated, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"])
+    def schedule(self, request, pk=None):
+        return self._execute_action(request, schedule_payment)
+
+    @action(detail=True, methods=["post"])
+    def confirm(self, request, pk=None):
+        return self._execute_action(request, confirm_payment)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        return self._execute_action(request, cancel_payment)

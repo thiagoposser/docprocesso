@@ -64,6 +64,15 @@ class PaymentStatus(models.TextChoices):
     CANCELLED = "CANCELLED", "Cancelado"
 
 
+class PaymentMethod(models.TextChoices):
+    PIX = "PIX", "Pix"
+    BANK_TRANSFER = "BANK_TRANSFER", "Transferência bancária"
+    BOLETO = "BOLETO", "Boleto"
+    CARD = "CARD", "Cartão"
+    CASH = "CASH", "Dinheiro"
+    OTHER = "OTHER", "Outro"
+
+
 class Payment(models.Model):
     process = models.ForeignKey("processes.AdministrativeProcess", on_delete=models.PROTECT, related_name="payments")
     document = models.ForeignKey("documents.Document", on_delete=models.PROTECT, related_name="payments", blank=True, null=True)
@@ -76,8 +85,10 @@ class Payment(models.Model):
     scheduled_at = models.DateTimeField(blank=True, null=True)
     paid_at = models.DateTimeField(blank=True, null=True)
     paid_amount = models.DecimalField(max_digits=14, decimal_places=2, blank=True, null=True)
+    payment_method = models.CharField(max_length=20, choices=PaymentMethod.choices, blank=True)
     paid_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="confirmed_payments", blank=True, null=True)
     cancelled_at = models.DateTimeField(blank=True, null=True)
+    cancellation_reason = models.TextField(blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_payments")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -88,12 +99,14 @@ class Payment(models.Model):
         permissions = [
             ("view_financial_data", "Pode visualizar dados financeiros"),
             ("confirm_payment", "Pode confirmar pagamentos"),
+            ("schedule_payment", "Pode agendar pagamentos"),
+            ("cancel_payment", "Pode cancelar pagamentos"),
         ]
         constraints = [
             models.CheckConstraint(condition=models.Q(amount__gte=0), name="payment_amount_nonnegative"),
             models.CheckConstraint(condition=models.Q(paid_amount__isnull=True) | models.Q(paid_amount__gte=0), name="payment_paid_amount_nonnegative"),
             models.CheckConstraint(
-                condition=~models.Q(status=PaymentStatus.PAID) | models.Q(paid_at__isnull=False, paid_amount__isnull=False, paid_by__isnull=False),
+                condition=~models.Q(status=PaymentStatus.PAID) | (models.Q(paid_at__isnull=False, paid_amount__isnull=False, paid_by__isnull=False) & ~models.Q(payment_method="")),
                 name="payment_paid_fields_required",
             ),
             models.CheckConstraint(
@@ -105,12 +118,20 @@ class Payment(models.Model):
                 name="payment_cancelled_at_required",
             ),
             models.CheckConstraint(
-                condition=models.Q(status=PaymentStatus.PAID) | models.Q(paid_at__isnull=True, paid_amount__isnull=True, paid_by__isnull=True),
+                condition=~models.Q(status=PaymentStatus.CANCELLED) | ~models.Q(cancellation_reason=""),
+                name="payment_cancel_reason_required",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status=PaymentStatus.PAID) | models.Q(paid_at__isnull=True, paid_amount__isnull=True, paid_by__isnull=True, payment_method=""),
                 name="payment_paid_fields_only_when_paid",
             ),
             models.CheckConstraint(
                 condition=models.Q(status=PaymentStatus.CANCELLED) | models.Q(cancelled_at__isnull=True),
                 name="payment_cancelled_at_only_cancelled",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status=PaymentStatus.CANCELLED) | models.Q(cancellation_reason=""),
+                name="payment_cancel_reason_only_cancelled",
             ),
         ]
         indexes = [
@@ -129,15 +150,15 @@ class Payment(models.Model):
             errors["paid_amount"] = "O valor pago não pode ser negativo."
         if self.document_id and self.document.process_id != self.process_id:
             errors["document"] = "O documento deve pertencer ao mesmo processo do pagamento."
-        if self.status == PaymentStatus.PAID and not (self.paid_at and self.paid_amount is not None and self.paid_by_id):
-            errors["status"] = "Pagamento pago exige data, valor e responsável pela confirmação."
+        if self.status == PaymentStatus.PAID and not (self.paid_at and self.paid_amount is not None and self.paid_by_id and self.payment_method):
+            errors["status"] = "Pagamento pago exige data, valor, forma e responsável pela confirmação."
         if self.status == PaymentStatus.SCHEDULED and not self.scheduled_at:
             errors["scheduled_at"] = "Informe a data do agendamento."
-        if self.status == PaymentStatus.CANCELLED and not self.cancelled_at:
-            errors["cancelled_at"] = "Informe a data do cancelamento."
-        if self.status != PaymentStatus.PAID and (self.paid_at or self.paid_amount is not None or self.paid_by_id):
+        if self.status == PaymentStatus.CANCELLED and not (self.cancelled_at and self.cancellation_reason.strip()):
+            errors["cancelled_at"] = "Informe a data e o motivo do cancelamento."
+        if self.status != PaymentStatus.PAID and (self.paid_at or self.paid_amount is not None or self.paid_by_id or self.payment_method):
             errors["paid_at"] = "Dados de confirmação só podem existir em um pagamento pago."
-        if self.status != PaymentStatus.CANCELLED and self.cancelled_at:
+        if self.status != PaymentStatus.CANCELLED and (self.cancelled_at or self.cancellation_reason):
             errors["cancelled_at"] = "A data de cancelamento só pode existir em um pagamento cancelado."
         if errors:
             raise ValidationError(errors)
