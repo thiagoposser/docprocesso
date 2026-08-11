@@ -10,7 +10,7 @@ from rest_framework.test import APITestCase
 
 from apps.sectors.models import Sector, UserSectorMembership
 
-from .models import AdministrativeProcess, ProcessStatus, ProcessType
+from .models import AdministrativeProcess, ProcessMovement, ProcessMovementAction, ProcessStatus, ProcessType
 
 
 class AdministrativeProcessModelTests(TestCase):
@@ -188,3 +188,83 @@ class AdministrativeProcessApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual([item["id"] for item in response.data], [self.process_type.pk])
+
+
+class ProcessMovementModelTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="movement_actor")
+        self.origin = Sector.objects.create(name="Movimento origem", code="MOV-O")
+        self.destination = Sector.objects.create(name="Movimento destino", code="MOV-D")
+        process_type = ProcessType.objects.create(name="Movimentação", code="movimentacao")
+        self.process = AdministrativeProcess.objects.create(
+            title="Processo movimentado",
+            process_type=process_type,
+            created_by=self.user,
+            origin_sector=self.origin,
+        )
+
+    def movement(self, **changes):
+        values = {
+            "process": self.process,
+            "action": ProcessMovementAction.OPEN,
+            "from_sector": None,
+            "to_sector": self.origin,
+            "actor": self.user,
+            "status_before": ProcessStatus.DRAFT,
+            "status_after": ProcessStatus.OPEN,
+        }
+        values.update(changes)
+        return ProcessMovement.objects.create(**values)
+
+    def test_records_ordered_append_only_history(self):
+        first = self.movement()
+        second = self.movement(
+            action=ProcessMovementAction.FORWARD,
+            from_sector=self.origin,
+            to_sector=self.destination,
+            status_before=ProcessStatus.OPEN,
+            status_after=ProcessStatus.IN_PROGRESS,
+        )
+
+        self.assertEqual(list(ProcessMovement.objects.for_process(self.process)), [first, second])
+        self.assertEqual(ProcessMovement._meta.default_permissions, ("view",))
+
+    def test_rejects_instance_and_queryset_mutation(self):
+        movement = self.movement()
+        movement.note = "alterado"
+        with self.assertRaisesMessage(ValidationError, "imutáveis"):
+            movement.save()
+        with self.assertRaisesMessage(ValidationError, "imutáveis"):
+            ProcessMovement.objects.filter(pk=movement.pk).update(note="alterado")
+        with self.assertRaisesMessage(ValidationError, "imutáveis"):
+            movement.delete()
+        with self.assertRaisesMessage(ValidationError, "imutáveis"):
+            ProcessMovement.objects.filter(pk=movement.pk).delete()
+
+    def test_requires_note_for_return_cancel_and_reopen(self):
+        for action in (ProcessMovementAction.RETURN, ProcessMovementAction.CANCEL, ProcessMovementAction.REOPEN):
+            values = {"action": action, "from_sector": self.origin, "to_sector": self.destination}
+            if action in {ProcessMovementAction.CANCEL, ProcessMovementAction.REOPEN}:
+                values["to_sector"] = self.origin
+            with self.assertRaisesMessage(ValidationError, "observação é obrigatória"):
+                self.movement(**values)
+
+    def test_enforces_sector_coherence_by_action(self):
+        with self.assertRaisesMessage(ValidationError, "somente o setor de destino"):
+            self.movement(from_sector=self.origin)
+        with self.assertRaisesMessage(ValidationError, "origem e destino diferentes"):
+            self.movement(action=ProcessMovementAction.FORWARD, from_sector=self.origin, to_sector=self.origin)
+        with self.assertRaisesMessage(ValidationError, "permanecer no mesmo setor"):
+            self.movement(action=ProcessMovementAction.RECEIVE, from_sector=self.origin, to_sector=self.destination)
+        with self.assertRaisesMessage(ValidationError, "ação de estado"):
+            self.movement(action=ProcessMovementAction.COMPLETE, from_sector=None, to_sector=None)
+
+    def test_referenced_records_are_protected(self):
+        self.movement()
+        for referenced in (self.process, self.origin, self.user):
+            with self.assertRaises(ProtectedError):
+                referenced.delete()
+
+    def test_declares_expected_indexes(self):
+        names = {index.name for index in ProcessMovement._meta.indexes}
+        self.assertEqual(names, {"movement_process_date_idx", "movement_from_date_idx", "movement_to_date_idx", "movement_action_date_idx"})

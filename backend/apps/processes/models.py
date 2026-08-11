@@ -21,6 +21,17 @@ class ProcessStatus(models.TextChoices):
     ARCHIVED = "ARCHIVED", "Arquivado"
 
 
+class ProcessMovementAction(models.TextChoices):
+    OPEN = "OPEN", "Abertura"
+    FORWARD = "FORWARD", "Encaminhamento"
+    RECEIVE = "RECEIVE", "Recebimento"
+    RETURN = "RETURN", "Devolução"
+    COMPLETE = "COMPLETE", "Conclusão"
+    REOPEN = "REOPEN", "Reabertura"
+    CANCEL = "CANCEL", "Cancelamento"
+    ARCHIVE = "ARCHIVE", "Arquivamento"
+
+
 class ProcessType(models.Model):
     name = models.CharField(max_length=150, unique=True)
     code = models.SlugField(max_length=50, unique=True)
@@ -119,3 +130,121 @@ class AdministrativeProcess(models.Model):
 
     def __str__(self):
         return f"{self.number} - {self.title}"
+
+
+class ProcessMovementQuerySet(models.QuerySet):
+    def chronological(self):
+        return self.order_by("created_at", "id")
+
+    def for_process(self, process):
+        return self.filter(process=process).chronological()
+
+    def update(self, **kwargs):
+        raise ValidationError("Movimentações são imutáveis e não podem ser atualizadas.")
+
+    def delete(self):
+        raise ValidationError("Movimentações são imutáveis e não podem ser excluídas.")
+
+
+class ProcessMovement(models.Model):
+    process = models.ForeignKey(AdministrativeProcess, on_delete=models.PROTECT, related_name="movements")
+    action = models.CharField(max_length=20, choices=ProcessMovementAction.choices)
+    from_sector = models.ForeignKey(
+        Sector,
+        on_delete=models.PROTECT,
+        related_name="outgoing_process_movements",
+        blank=True,
+        null=True,
+    )
+    to_sector = models.ForeignKey(
+        Sector,
+        on_delete=models.PROTECT,
+        related_name="incoming_process_movements",
+        blank=True,
+        null=True,
+    )
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="process_movements")
+    note = models.TextField(blank=True)
+    status_before = models.CharField(max_length=20, choices=ProcessStatus.choices)
+    status_after = models.CharField(max_length=20, choices=ProcessStatus.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ProcessMovementQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        default_permissions = ("view",)
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(action__in=[ProcessMovementAction.RETURN, ProcessMovementAction.CANCEL, ProcessMovementAction.REOPEN], note=""),
+                name="movement_required_note",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(action=ProcessMovementAction.OPEN) | models.Q(from_sector__isnull=True, to_sector__isnull=False),
+                name="movement_open_sector_coherence",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(action__in=[ProcessMovementAction.FORWARD, ProcessMovementAction.RETURN])
+                | (models.Q(from_sector__isnull=False, to_sector__isnull=False) & ~models.Q(from_sector=models.F("to_sector"))),
+                name="movement_transfer_sectors",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(action=ProcessMovementAction.RECEIVE)
+                | models.Q(from_sector__isnull=False, from_sector=models.F("to_sector")),
+                name="movement_receive_sector",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(action__in=[
+                    ProcessMovementAction.COMPLETE,
+                    ProcessMovementAction.CANCEL,
+                    ProcessMovementAction.REOPEN,
+                    ProcessMovementAction.ARCHIVE,
+                ]) | models.Q(from_sector__isnull=False, from_sector=models.F("to_sector")),
+                name="movement_state_action_sector",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["process", "created_at"], name="movement_process_date_idx"),
+            models.Index(fields=["from_sector", "created_at"], name="movement_from_date_idx"),
+            models.Index(fields=["to_sector", "created_at"], name="movement_to_date_idx"),
+            models.Index(fields=["action", "created_at"], name="movement_action_date_idx"),
+        ]
+        verbose_name = "movimentação de processo"
+        verbose_name_plural = "movimentações de processos"
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.action in {ProcessMovementAction.RETURN, ProcessMovementAction.CANCEL, ProcessMovementAction.REOPEN} and not self.note.strip():
+            errors["note"] = "A observação é obrigatória para esta ação."
+        if self.action == ProcessMovementAction.OPEN and (self.from_sector_id is not None or self.to_sector_id is None):
+            errors["to_sector"] = "A abertura deve informar somente o setor de destino."
+        if self.action in {ProcessMovementAction.FORWARD, ProcessMovementAction.RETURN} and (
+            self.from_sector_id is None or self.to_sector_id is None or self.from_sector_id == self.to_sector_id
+        ):
+            errors["to_sector"] = "A ação deve informar setores de origem e destino diferentes."
+        if self.action == ProcessMovementAction.RECEIVE and (
+            self.from_sector_id is None or self.to_sector_id != self.from_sector_id
+        ):
+            errors["to_sector"] = "O recebimento deve permanecer no mesmo setor."
+        if self.action in {
+            ProcessMovementAction.COMPLETE,
+            ProcessMovementAction.CANCEL,
+            ProcessMovementAction.REOPEN,
+            ProcessMovementAction.ARCHIVE,
+        } and (self.from_sector_id is None or self.to_sector_id != self.from_sector_id):
+            errors["to_sector"] = "A ação de estado deve permanecer no mesmo setor."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Movimentações são imutáveis e não podem ser atualizadas.")
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Movimentações são imutáveis e não podem ser excluídas.")
+
+    def __str__(self):
+        return f"{self.process.number} - {self.get_action_display()}"
