@@ -23,6 +23,14 @@ def is_administrator(user):
     return user.is_staff or user.has_perm("documents.manage_document")
 
 
+def secure_file_response(file, *, filename, inline=False):
+    response = FileResponse(file, as_attachment=not inline, filename=filename or None)
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Cache-Control"] = "private, no-store"
+    response["Content-Security-Policy"] = "sandbox"
+    return response
+
+
 class DocumentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     serializer_class = DocumentSerializer
     permission_classes = [DocumentPermission]
@@ -101,7 +109,10 @@ class DocumentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMod
         if not document.file:
             raise Http404
         record_audit(action=AuditAction.DOCUMENT_DOWNLOAD, description="Documento baixado", request=request, entity=document, new_values={"title": document.title, "file_name": document.original_file_name})
-        return FileResponse(document.file.open("rb"), as_attachment=request.query_params.get("attachment") == "true", filename=document.original_file_name or None)
+        return secure_file_response(
+            document.file.open("rb"), filename=document.original_file_name,
+            inline=request.query_params.get("attachment") != "true",
+        )
 
     @action(detail=True, methods=["get", "post"], url_path="attachments")
     def attachments(self, request, pk=None):
@@ -162,7 +173,7 @@ class AttachmentViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
             entity=attachment, new_values={"document_id": attachment.document_id},
         )
         if attachment.file:
-            return FileResponse(attachment.file.open("rb"), as_attachment=True, filename=attachment.original_file_name or None)
+            return secure_file_response(attachment.file.open("rb"), filename=attachment.original_file_name)
         return Response({"external_url": attachment.external_url})
 
     @action(detail=True, methods=["patch"])
