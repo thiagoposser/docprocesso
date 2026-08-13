@@ -18,6 +18,30 @@ MAX_EVENT_PAYLOAD_BYTES = 8 * 1024
 MAX_EVENT_STRING_LENGTH = 500
 MAX_EVENT_COLLECTION_ITEMS = 50
 MAX_EVENT_DEPTH = 4
+_UNSET = object()
+
+
+def build_organizational_snapshot(*, process, actor=None, sector=None, function=_UNSET):
+    sector = sector or process.responsible_sector or process.current_sector or process.origin_sector
+    function = process.responsible_function if function is _UNSET else function
+    unit = sector.unit if sector and sector.unit_id else None
+    membership = None
+    if actor and sector:
+        memberships = actor.sector_memberships.effective().filter(sector=sector)
+        if function:
+            memberships = memberships.filter(function=function)
+        membership = memberships.order_by("id").first()
+    return {
+        "actor": {
+            "id": actor.pk if actor else None,
+            "name": actor.full_name if actor else None,
+            "username": actor.username if actor else None,
+        },
+        "membership_id": membership.pk if membership else None,
+        "unit": {"id": unit.pk, "name": unit.name, "code": unit.acronym} if unit else None,
+        "sector": {"id": sector.pk, "name": sector.name, "code": sector.code} if sector else None,
+        "function": {"id": function.pk, "name": function.name, "code": function.code} if function else None,
+    }
 
 
 def sanitize_event_payload(value, *, depth=0):
@@ -60,6 +84,7 @@ def append_process_event(
         if corrects_event is None or corrects_event.process_id != process.pk:
             raise ValidationError({"corrects_event": "Informe um evento do mesmo processo a ser corrigido."})
         payload = {**(payload or {}), "corrects_event_id": corrects_event.pk}
+    payload = {**(payload or {}), "organizational_context": build_organizational_snapshot(process=process, actor=actor)}
     clean_payload = _validated_payload(payload)
     event = ProcessEvent.objects.create(
         process=process,

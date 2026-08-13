@@ -80,6 +80,16 @@ class ProcessTransitionApiTests(APITestCase):
         self.assertEqual(executed.data["current_sector"], self.destination.pk)
         self.assertEqual(executed.data["responsible_sector"], self.destination.pk)
         self.assertEqual(executed.data["responsible_function"], self.target_function.pk)
+        historical_destination_name = self.destination.name
+        historical_function_name = self.target_function.name
+        self.destination.name = "Destino renomeado"
+        self.destination.active = False
+        self.destination.save()
+        self.target_function.name = "Função renomeada"
+        self.target_function.active = False
+        self.target_function.save()
+        self.user.is_superuser = True
+        self.user.save(update_fields=["is_superuser"])
         timeline = self.client.get(reverse("process-timeline", args=[self.process.pk]))
         self.assertEqual(timeline.status_code, status.HTTP_200_OK)
         fact = timeline.data["results"][0]
@@ -89,7 +99,7 @@ class ProcessTransitionApiTests(APITestCase):
         self.assertEqual(fact["to_stage_name"], "Aprovação")
         self.assertEqual(fact["from_responsibility"], self.origin.name)
         self.assertEqual(
-            fact["to_responsibility"], f"{self.destination.name} · {self.target_function.name}"
+            fact["to_responsibility"], f"{historical_destination_name} · {historical_function_name}"
         )
 
     def test_rejects_illegal_stale_and_terminal_actions(self):

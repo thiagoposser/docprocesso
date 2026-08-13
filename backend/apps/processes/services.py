@@ -9,7 +9,7 @@ from apps.sectors.models import UserSectorMembership
 from apps.audit.models import AuditAction
 from apps.audit.services import record_audit
 
-from .event_services import append_process_event
+from .event_services import append_process_event, build_organizational_snapshot
 from .models import (
     AdministrativeProcess,
     ProcessMovement,
@@ -276,6 +276,16 @@ def _perform_action(*, process_id, actor, action, expected_version, destination=
         to_responsible_function=process.responsible_function if workflow_transition is not None else None,
         from_assignee=assignee_before if workflow_transition is not None else None,
         to_assignee=process.assignee if workflow_transition is not None else None,
+        context_snapshot={
+            "before": build_organizational_snapshot(
+                process=process, actor=actor, sector=responsible_sector_before or source,
+                function=responsible_function_before,
+            ),
+            "after": build_organizational_snapshot(
+                process=process, actor=actor, sector=process.responsible_sector or movement_target,
+                function=process.responsible_function,
+            ),
+        },
     )
     record_audit(
         action=AuditAction.PROCESS_WORKFLOW,

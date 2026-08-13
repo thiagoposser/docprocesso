@@ -274,6 +274,7 @@ class ProcessTimelineEntrySerializer(serializers.Serializer):
     to_stage_name = serializers.CharField(read_only=True, allow_null=True)
     from_responsibility = serializers.CharField(read_only=True, allow_null=True)
     to_responsibility = serializers.CharField(read_only=True, allow_null=True)
+    context_snapshot = serializers.DictField(read_only=True)
     note = serializers.CharField(read_only=True, allow_blank=True)
     payload = serializers.DictField(read_only=True)
     status_before = serializers.CharField(read_only=True, allow_null=True)

@@ -44,6 +44,7 @@ export interface ProcessMovement {
   from_stage: number | null; from_stage_name: string | null;
   to_stage: number | null; to_stage_name: string | null;
   from_responsibility: string | null; to_responsibility: string | null;
+  context_snapshot: Record<string, unknown>;
   actor: number | null; actor_name: string | null; note: string; payload: Record<string, unknown>;
   status_before: ProcessStatus | null; status_before_label: string | null;
   status_after: ProcessStatus | null; status_after_label: string | null; created_at: string;

@@ -377,6 +377,12 @@ class ProcessViewSet(
             ) if item]
             return " · ".join(parts) or None
 
+        def snapshot_label(snapshot):
+            return " · ".join(
+                entry["name"] for key in ("unit", "sector", "function")
+                if (entry := snapshot.get(key))
+            ) or None
+
         entries = [
             {
                 "kind": "movement", "id": f"movement-{item.pk}", "action": item.action,
@@ -392,12 +398,13 @@ class ProcessViewSet(
                 "from_stage_name": item.from_stage.name if item.from_stage else None,
                 "to_stage": item.to_stage_id,
                 "to_stage_name": item.to_stage.name if item.to_stage else None,
-                "from_responsibility": responsibility_label(
+                "from_responsibility": snapshot_label(item.context_snapshot.get("before", {})) or responsibility_label(
                     item.from_responsible_sector, item.from_responsible_function, item.from_assignee
                 ),
-                "to_responsibility": responsibility_label(
+                "to_responsibility": snapshot_label(item.context_snapshot.get("after", {})) or responsibility_label(
                     item.to_responsible_sector, item.to_responsible_function, item.to_assignee
                 ),
+                "context_snapshot": item.context_snapshot,
                 "note": item.note, "payload": {}, "status_before": item.status_before,
                 "status_before_label": item.get_status_before_display(), "status_after": item.status_after,
                 "status_after_label": item.get_status_after_display(), "created_at": item.created_at,
@@ -413,6 +420,7 @@ class ProcessViewSet(
                 "transition_code": None, "from_stage": None, "from_stage_name": None,
                 "to_stage": None, "to_stage_name": None, "from_responsibility": None,
                 "to_responsibility": None,
+                "context_snapshot": item.payload.get("organizational_context", {}),
                 "note": item.description, "payload": item.payload, "status_before": None,
                 "status_before_label": None, "status_after": None, "status_after_label": None,
                 "created_at": item.created_at,
