@@ -270,5 +270,4 @@ class ProcessTypeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     pagination_class = None
 
     def get_queryset(self):
-        queryset = ProcessType.objects.all()
-        return queryset if self.request.user.is_superuser else queryset.filter(active=True)
+        return ProcessType.objects.filter(active=True)

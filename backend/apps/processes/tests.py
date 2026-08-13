@@ -295,6 +295,11 @@ class AdministrativeProcessApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual([item["id"] for item in response.data], [self.process_type.pk])
 
+        self.user.is_superuser = True
+        self.user.save(update_fields=["is_superuser"])
+        response = self.client.get(reverse("process-type-list"))
+        self.assertEqual([item["id"] for item in response.data], [self.process_type.pk])
+
 
 class ProcessMovementModelTests(TestCase):
     def setUp(self):

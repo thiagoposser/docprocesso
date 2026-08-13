@@ -108,6 +108,12 @@ Estados de ciclo de vida devem começar como `TextChoices`, pois são poucos, go
 
 Tipos de processo e documento devem ser entidades configuráveis. Estados e ações críticas não devem ser configuráveis inicialmente, pois permitir transições arbitrárias comprometeria regras, relatórios e auditoria. Fluxos configuráveis são evolução futura e só devem surgir após fluxos reais estabilizados.
 
+#### Semântica de `ProcessType`
+
+`ProcessType` classifica a finalidade administrativa do processo (por exemplo, contratação, solicitação ou apuração). Ele não representa uma etapa, um destino, um estado ou uma definição de fluxo. Nenhuma transição ou autorização deve ser inferida diretamente dessa classificação. O tipo dos documentos anexados continua sendo responsabilidade de `DocumentCategory`, sem equivalência automática com `ProcessType`.
+
+O endpoint compatível `/api/process-types/` permanece como catálogo para novas escolhas e retorna somente classificações ativas. Processos históricos preservam a referência e a exibição de classificações que tenham sido posteriormente inativadas. Uma associação entre classificação e fluxo, caso necessária, deve ser modelada separadamente e de forma aditiva em evolução futura.
+
 ### 4.2 Pagamento
 
 Status persistidos recomendados:
