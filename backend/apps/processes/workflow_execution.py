@@ -67,7 +67,10 @@ def execute_semantic_movement(
     if destination is None:
         raise UnresolvedTransitionSector("A etapa de destino não possui setor responsável.")
     service = return_process if transition.is_return else forward_process
-    return service(
+    updated = service(
         process_id=process.pk, actor=user, destination=destination,
         expected_version=expected_process_version, note=note,
     )
+    updated.current_stage = transition.destination_stage
+    updated.save(update_fields=["current_stage", "updated_at"])
+    return updated
