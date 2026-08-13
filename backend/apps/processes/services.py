@@ -108,10 +108,10 @@ def create_process(*, user, origin_membership=None, **validated_data):
     return process
 
 
-def _require_access(*, actor, action, process, sector):
+def _require_access(*, actor, action, process, sector, permission=None):
     decision = evaluate_sector_access(
         actor,
-        permission=PERMISSIONS[action],
+        permission=permission or PERMISSIONS[action],
         sector=sector,
         resource_state=process.status,
         allowed_states=TRANSITIONS[action][0],
@@ -193,18 +193,18 @@ def _validate_transition(process, action):
         )
 
 
-def _validate_destination(process, action, destination):
+def _validate_destination(process, action, destination, *, workflow_transition=None):
     if action not in {ProcessMovementAction.FORWARD, ProcessMovementAction.RETURN}:
         return process.current_sector
     if destination is None or not destination.active:
         raise InvalidProcessDestination("Selecione um setor de destino ativo.")
-    if destination.pk == process.current_sector_id:
+    if destination.pk == process.current_sector_id and workflow_transition is None:
         raise InvalidProcessDestination("O setor de destino deve ser diferente do setor atual.")
     return destination
 
 
 @transaction.atomic
-def _perform_action(*, process_id, actor, action, expected_version, destination=None, note="", workflow_transition=None):
+def _perform_action(*, process_id, actor, action, expected_version, destination=None, note="", workflow_transition=None, access_permission=None):
     process = (
         AdministrativeProcess.objects.select_for_update(of=("self",))
         .select_related(
@@ -218,11 +218,13 @@ def _perform_action(*, process_id, actor, action, expected_version, destination=
 
     source = process.current_sector
     access_sector = process.origin_sector if action == ProcessMovementAction.OPEN else source
-    _require_access(actor=actor, action=action, process=process, sector=access_sector)
+    _require_access(actor=actor, action=action, process=process, sector=access_sector, permission=access_permission)
 
     if action in {ProcessMovementAction.RETURN, ProcessMovementAction.CANCEL, ProcessMovementAction.REOPEN} and not note.strip():
         raise InvalidProcessTransition("A observação é obrigatória para esta ação.")
-    target = process.origin_sector if action == ProcessMovementAction.OPEN else _validate_destination(process, action, destination)
+    target = process.origin_sector if action == ProcessMovementAction.OPEN else _validate_destination(
+        process, action, destination, workflow_transition=workflow_transition
+    )
     if action == ProcessMovementAction.RECEIVE:
         last_action = process.movements.order_by("-created_at", "-id").values_list("action", flat=True).first()
         if last_action not in {ProcessMovementAction.FORWARD, ProcessMovementAction.RETURN}:
@@ -302,11 +304,11 @@ def open_process(*, process_id, actor, expected_version, note=""):
     return _perform_action(process_id=process_id, actor=actor, action=ProcessMovementAction.OPEN, expected_version=expected_version, note=note)
 
 
-def forward_process(*, process_id, actor, destination, expected_version, note="", workflow_transition=None):
+def forward_process(*, process_id, actor, destination, expected_version, note="", workflow_transition=None, access_permission=None):
     return _perform_action(
         process_id=process_id, actor=actor, action=ProcessMovementAction.FORWARD,
         destination=destination, expected_version=expected_version, note=note,
-        workflow_transition=workflow_transition,
+        workflow_transition=workflow_transition, access_permission=access_permission,
     )
 
 
@@ -314,11 +316,11 @@ def receive_process(*, process_id, actor, expected_version, note=""):
     return _perform_action(process_id=process_id, actor=actor, action=ProcessMovementAction.RECEIVE, expected_version=expected_version, note=note)
 
 
-def return_process(*, process_id, actor, destination, expected_version, note, workflow_transition=None):
+def return_process(*, process_id, actor, destination, expected_version, note, workflow_transition=None, access_permission=None):
     return _perform_action(
         process_id=process_id, actor=actor, action=ProcessMovementAction.RETURN,
         destination=destination, expected_version=expected_version, note=note,
-        workflow_transition=workflow_transition,
+        workflow_transition=workflow_transition, access_permission=access_permission,
     )
 
 

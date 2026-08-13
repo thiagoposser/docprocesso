@@ -6,7 +6,7 @@ from apps.documents.models import validate_document_file
 from apps.documents.serializers import AttachmentSerializer
 
 from .models import Payment, PaymentMethod, PaymentReceipt, Supplier
-from .services import save_payment, save_supplier
+from .services import InvalidPaymentTransition, PaymentAccessDenied, create_payment, save_payment, save_supplier
 
 
 def mask_tax_id(value):
@@ -62,10 +62,11 @@ class PaymentSerializer(serializers.ModelSerializer):
         model = Payment
         fields = (
             "id", "process", "process_number", "document", "sector", "sector_name", "supplier", "supplier_name",
+            "workflow_version", "stage",
             "description", "amount", "due_date", "status", "is_overdue", "scheduled_at", "paid_at", "paid_amount",
             "payment_method", "paid_by", "cancelled_at", "cancellation_reason", "created_by", "created_at", "updated_at",
         )
-        read_only_fields = ("id", "process_number", "sector_name", "supplier_name", "status", "is_overdue", "scheduled_at", "paid_at", "paid_amount", "payment_method", "paid_by", "cancelled_at", "cancellation_reason", "created_by", "created_at", "updated_at")
+        read_only_fields = ("id", "process_number", "sector_name", "supplier_name", "workflow_version", "stage", "status", "is_overdue", "scheduled_at", "paid_at", "paid_amount", "payment_method", "paid_by", "cancelled_at", "cancellation_reason", "created_by", "created_at", "updated_at")
 
     def to_internal_value(self, data):
         attempted = self.protected_fields.intersection(data)
@@ -91,7 +92,9 @@ class PaymentSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         try:
-            return save_payment(Payment(created_by=self.context["request"].user), **validated_data)
+            return create_payment(actor=self.context["request"].user, **validated_data)
+        except (PaymentAccessDenied, InvalidPaymentTransition) as error:
+            raise serializers.ValidationError({"process": str(error)}) from error
         except DjangoValidationError as error:
             raise serializers.ValidationError(error.message_dict) from error
 

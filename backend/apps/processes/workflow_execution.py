@@ -49,7 +49,7 @@ def authorize_transition_execution(
 def execute_semantic_movement(
     *, user, process_id, transition_id, current_stage_id, expected_process_version,
     expected_workflow_version_id, note="", has_attachment=False,
-    available_document_roles=(),
+    available_document_roles=(), permission_override=None,
 ):
     process = AdministrativeProcess.objects.select_for_update(of=("self",)).select_related("current_sector", "origin_sector").get(
         pk=process_id
@@ -57,7 +57,7 @@ def execute_semantic_movement(
     process_sector_id = process.current_sector_id or process.origin_sector_id
     if process.current_stage_id != current_stage_id or process.responsible_sector_id != process_sector_id:
         raise TransitionDenied("stage_does_not_match_process_sector")
-    permission = (
+    permission = permission_override or (
         "processes.return_administrativeprocess"
         if WorkflowTransition.objects.only("is_return").get(pk=transition_id).is_return
         else "processes.forward_administrativeprocess"
@@ -77,5 +77,6 @@ def execute_semantic_movement(
     updated = service(
         process_id=process.pk, actor=user, destination=destination,
         expected_version=expected_process_version, note=note, workflow_transition=transition,
+        access_permission=permission_override,
     )
     return updated

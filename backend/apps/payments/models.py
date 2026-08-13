@@ -91,6 +91,12 @@ class Payment(models.Model):
     process = models.ForeignKey("processes.AdministrativeProcess", on_delete=models.PROTECT, related_name="payments")
     document = models.ForeignKey("documents.Document", on_delete=models.PROTECT, related_name="payments", blank=True, null=True)
     sector = models.ForeignKey("sectors.Sector", on_delete=models.PROTECT, related_name="payments")
+    workflow_version = models.ForeignKey(
+        "processes.WorkflowVersion", on_delete=models.PROTECT, related_name="payments", blank=True, null=True
+    )
+    stage = models.ForeignKey(
+        "processes.WorkflowStage", on_delete=models.PROTECT, related_name="payments", blank=True, null=True
+    )
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="payments")
     description = models.CharField(max_length=250)
     amount = models.DecimalField(max_digits=14, decimal_places=2)

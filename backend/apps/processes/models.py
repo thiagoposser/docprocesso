@@ -400,6 +400,7 @@ class ProcessMovement(models.Model):
             ),
             models.CheckConstraint(
                 condition=~models.Q(action__in=[ProcessMovementAction.FORWARD, ProcessMovementAction.RETURN])
+                | models.Q(transition__isnull=False)
                 | (models.Q(from_sector__isnull=False, to_sector__isnull=False) & ~models.Q(from_sector=models.F("to_sector"))),
                 name="movement_transfer_sectors",
             ),
@@ -435,7 +436,8 @@ class ProcessMovement(models.Model):
         if self.action == ProcessMovementAction.OPEN and (self.from_sector_id is not None or self.to_sector_id is None):
             errors["to_sector"] = "A abertura deve informar somente o setor de destino."
         if self.action in {ProcessMovementAction.FORWARD, ProcessMovementAction.RETURN} and (
-            self.from_sector_id is None or self.to_sector_id is None or self.from_sector_id == self.to_sector_id
+            self.from_sector_id is None or self.to_sector_id is None
+            or (self.from_sector_id == self.to_sector_id and not self.transition_id)
         ):
             errors["to_sector"] = "A ação deve informar setores de origem e destino diferentes."
         if self.action == ProcessMovementAction.RECEIVE and (

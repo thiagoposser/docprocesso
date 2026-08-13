@@ -8,6 +8,7 @@ import { AuthService } from '../../../../core/auth/auth.service';
 import { PageHeader } from '../../../../shared/components/page-header/page-header';
 import { PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS, Payment, PaymentMethod, PaymentReceipt } from '../../models/payment.models';
 import { PaymentService } from '../../services/payment.service';
+import { ProcessService } from '../../../processes/services/process.service';
 
 @Component({
   selector: 'app-payment-detail', imports: [CurrencyPipe, DatePipe, ReactiveFormsModule, RouterLink, PageHeader],
@@ -30,13 +31,13 @@ import { PaymentService } from '../../services/payment.service';
   `
 })
 export class PaymentDetail {
-  readonly auth = inject(AuthService); private readonly api = inject(PaymentService); private readonly route = inject(ActivatedRoute); private readonly id = Number(this.route.snapshot.paramMap.get('id'));
-  readonly payment = signal<Payment | null>(null); readonly receipts = signal<PaymentReceipt[]>([]); readonly error = signal(''); readonly receiptError = signal(''); readonly saving = signal(false); readonly action = signal<'schedule' | 'confirm' | 'cancel' | null>(null); readonly labels = PAYMENT_STATUS_LABELS; readonly methodLabels = PAYMENT_METHOD_LABELS; readonly methods = Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[];
+  readonly auth = inject(AuthService); private readonly api = inject(PaymentService); private readonly processApi = inject(ProcessService); private readonly route = inject(ActivatedRoute); private readonly id = Number(this.route.snapshot.paramMap.get('id'));
+  readonly payment = signal<Payment | null>(null); readonly receipts = signal<PaymentReceipt[]>([]); readonly workflowActions = signal<string[]>([]); readonly error = signal(''); readonly receiptError = signal(''); readonly saving = signal(false); readonly action = signal<'schedule' | 'confirm' | 'cancel' | null>(null); readonly labels = PAYMENT_STATUS_LABELS; readonly methodLabels = PAYMENT_METHOD_LABELS; readonly methods = Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[];
   readonly scheduleForm = new FormGroup({ scheduled_at: new FormControl('', { nonNullable: true, validators: [Validators.required] }) });
   readonly confirmForm = new FormGroup({ paid_at: new FormControl('', { nonNullable: true, validators: [Validators.required] }), paid_amount: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.pattern(/^\d{1,12}([.,]\d{1,2})?$/)] }), payment_method: new FormControl('', { nonNullable: true, validators: [Validators.required] }) });
   readonly cancelForm = new FormGroup({ reason: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(2000)] }) });
   constructor() { this.load(); }
-  can(permission: string) { const item = this.payment(); return Boolean(item && this.auth.canInSector(permission, item.sector)); }
+  can(permission: string) { const item = this.payment(); if (!item || !this.auth.canInSector(permission, item.sector)) return false; if (!item.workflow_version) return true; if (permission === 'payments.confirm_payment') return this.workflowActions().includes('confirm_payment'); if (permission === 'payments.manage_payment_receipt') return this.workflowActions().includes('attach_receipt'); return true; }
   canEdit() { const item = this.payment(); return Boolean(item && ['PENDING', 'SCHEDULED'].includes(item.status) && this.can('payments.change_payment')); }
   statusClass(item: Payment) { return `text-bg-${item.status === 'PAID' ? 'success' : item.status === 'CANCELLED' ? 'secondary' : item.is_overdue ? 'danger' : item.status === 'SCHEDULED' ? 'info' : 'warning'}`; }
   paymentMethodLabel(method: PaymentMethod | '') { return method ? this.methodLabels[method] : ''; }
@@ -47,6 +48,6 @@ export class PaymentDetail {
   downloadReceipt(receipt: PaymentReceipt) { this.api.downloadReceipt(receipt.attachment.id).subscribe({ next: blob => { const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = receipt.attachment.file_name || 'comprovante'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60_000); }, error: () => this.receiptError.set('Não foi possível baixar o comprovante.') }); }
   deactivateReceipt(receipt: PaymentReceipt) { if (!window.confirm('Inativar este comprovante? O arquivo será preservado no histórico.')) return; this.api.deactivateReceipt(receipt.attachment.id).subscribe({ next: () => this.loadReceipts(), error: () => this.receiptError.set('Não foi possível inativar o comprovante.') }); }
   private execute(request: () => ReturnType<PaymentService['get']>, label: string) { this.saving.set(true); this.error.set(''); request().pipe(finalize(() => this.saving.set(false))).subscribe({ next: item => { this.payment.set(item); this.action.set(null); }, error: response => { if (response?.status === 409) this.load(); this.error.set(response?.status === 409 ? 'O pagamento já foi alterado. Os dados foram recarregados; revise antes de tentar novamente.' : response?.status === 403 ? 'Você não possui permissão para esta ação.' : `Não foi possível concluir o ${label}.`); } }); }
-  private load() { this.api.get(this.id).subscribe({ next: item => { this.payment.set(item); this.confirmForm.patchValue({ paid_amount: item.amount }); this.loadReceipts(); }, error: response => this.error.set(response?.status === 403 ? 'Você não possui acesso aos dados financeiros.' : 'Pagamento não encontrado ou fora do seu escopo.') }); }
+  private load() { this.api.get(this.id).subscribe({ next: item => { this.payment.set(item); this.confirmForm.patchValue({ paid_amount: item.amount }); this.processApi.availableActions(item.process).subscribe({ next: actions => this.workflowActions.set(actions.map(action => action.integration_action).filter(Boolean)) }); this.loadReceipts(); }, error: response => this.error.set(response?.status === 403 ? 'Você não possui acesso aos dados financeiros.' : 'Pagamento não encontrado ou fora do seu escopo.') }); }
   private loadReceipts() { this.api.receipts(this.id).subscribe({ next: items => this.receipts.set(items), error: () => this.receiptError.set('Não foi possível carregar os comprovantes.') }); }
 }

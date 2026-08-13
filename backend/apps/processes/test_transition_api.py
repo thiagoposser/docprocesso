@@ -60,7 +60,7 @@ class ProcessTransitionApiTests(APITestCase):
         self.assertEqual(response.data, [{
             "action": "aprovar", "label": "Aprovar", "destination_stage": self.target.pk,
             "destination_stage_name": "Aprovação", "requires_note": True,
-            "requires_attachment": True, "required_document_role": "", "is_return": False,
+            "requires_attachment": True, "required_document_role": "", "integration_action": "", "is_return": False,
         }])
         self.client.force_authenticate(self.outsider)
         self.assertEqual(self.client.get(self.available_url).data, [])
