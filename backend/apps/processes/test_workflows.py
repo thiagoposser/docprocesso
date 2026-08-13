@@ -7,7 +7,7 @@ from rest_framework.test import APITestCase
 
 from apps.sectors.models import OrganizationalFunction, Sector
 
-from .models import AdministrativeWorkflow, WorkflowStage, WorkflowVersion
+from .models import AdministrativeWorkflow, WorkflowStage, WorkflowTransition, WorkflowVersion
 from .workflow_services import create_workflow, update_workflow
 
 
@@ -121,3 +121,87 @@ class WorkflowStageApiTests(APITestCase):
     def test_requires_stage_permissions(self):
         self.user.user_permissions.clear()
         self.assertEqual(self.client.get(reverse("workflow-stage-list")).status_code, status.HTTP_403_FORBIDDEN)
+
+
+class WorkflowTransitionApiTests(APITestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="transition_admin")
+        self.user.user_permissions.add(*Permission.objects.filter(
+            codename__in=["view_workflowtransition", "add_workflowtransition", "change_workflowtransition"]
+        ))
+        self.client.force_authenticate(self.user)
+        self.workflow = create_workflow(code="transition-flow", name="Fluxo")
+        self.sector = Sector.objects.create(name="Protocolo", code="PROTO-TRANS")
+        self.function = OrganizationalFunction.objects.create(name="Analista", code="ANAL-TRANS")
+        self.source = WorkflowStage.objects.create(
+            workflow_version=self.workflow.current_version, order=1, name="Solicitação", is_initial=True,
+            responsible_sector=self.sector,
+        )
+        self.destination = WorkflowStage.objects.create(
+            workflow_version=self.workflow.current_version, order=2, name="Aprovação", is_final=True,
+            responsible_function=self.function,
+        )
+
+    def payload(self, **changes):
+        data = {
+            "source_stage": self.source.pk, "destination_stage": self.destination.pk,
+            "code": "enviar-aprovacao", "name": "Enviar para aprovação",
+            "authorized_function": self.function.pk, "requires_note": True,
+            "requires_attachment": True, "is_return": False, "active": True,
+        }
+        data.update(changes)
+        return data
+
+    def test_persists_transition_requirements_and_lists_by_workflow(self):
+        created = self.client.post(reverse("workflow-transition-list"), self.payload(), format="json")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(created.data["requires_note"])
+        self.assertTrue(created.data["requires_attachment"])
+        listed = self.client.get(reverse("workflow-transition-list"), {"workflow": self.workflow.pk})
+        self.assertEqual(listed.data["count"], 1)
+
+    def test_rejects_cross_version_duplicate_and_final_normal_exit(self):
+        self.client.post(reverse("workflow-transition-list"), self.payload(), format="json")
+        duplicate = self.client.post(reverse("workflow-transition-list"), self.payload(destination_stage=self.source.pk), format="json")
+        self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
+        other = create_workflow(code="other-flow", name="Outro")
+        other_stage = WorkflowStage.objects.create(
+            workflow_version=other.current_version, order=1, name="Outra", responsible_sector=self.sector,
+        )
+        crossed = self.client.post(reverse("workflow-transition-list"), self.payload(
+            code="cruzada", destination_stage=other_stage.pk
+        ), format="json")
+        self.assertEqual(crossed.status_code, status.HTTP_400_BAD_REQUEST)
+        final_exit = self.client.post(reverse("workflow-transition-list"), self.payload(
+            source_stage=self.destination.pk, destination_stage=self.source.pk, code="sair-final"
+        ), format="json")
+        self.assertEqual(final_exit.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_allows_explicit_return_from_final_stage(self):
+        response = self.client.post(reverse("workflow-transition-list"), self.payload(
+            source_stage=self.destination.pk, destination_stage=self.source.pk, code="devolver", name="Devolver",
+            is_return=True,
+        ), format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_rejects_inactive_authorization_and_requires_permission(self):
+        self.function.active = False
+        self.function.save()
+        inactive = self.client.post(reverse("workflow-transition-list"), self.payload(), format="json")
+        self.assertEqual(inactive.status_code, status.HTTP_400_BAD_REQUEST)
+        self.user.user_permissions.clear()
+        self.user = get_user_model().objects.get(pk=self.user.pk)
+        self.client.force_authenticate(self.user)
+        self.assertEqual(self.client.get(reverse("workflow-transition-list")).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_new_version_clones_graph_and_old_transition_is_read_only(self):
+        created = self.client.post(reverse("workflow-transition-list"), self.payload(), format="json")
+        update_workflow(workflow=self.workflow, description="Nova versão")
+        self.workflow.refresh_from_db()
+        transition = WorkflowTransition.objects.get(source_stage__workflow_version=self.workflow.current_version)
+        self.assertEqual(transition.source_stage.order, 1)
+        self.assertEqual(transition.destination_stage.order, 2)
+        changed = self.client.patch(
+            reverse("workflow-transition-detail", args=[created.data["id"]]), {"name": "Alterada"}, format="json"
+        )
+        self.assertEqual(changed.status_code, status.HTTP_400_BAD_REQUEST)

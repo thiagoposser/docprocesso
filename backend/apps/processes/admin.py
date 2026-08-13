@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessEvent, ProcessMovement, ProcessType, WorkflowStage, WorkflowVersion
+from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessEvent, ProcessMovement, ProcessType, WorkflowStage, WorkflowTransition, WorkflowVersion
 
 
 @admin.register(AdministrativeWorkflow)
@@ -32,6 +32,16 @@ class WorkflowVersionAdmin(admin.ModelAdmin):
 class WorkflowStageAdmin(admin.ModelAdmin):
     list_display = ("workflow_version", "order", "name", "is_initial", "is_final")
     list_filter = ("is_initial", "is_final", "requires_manager")
+    readonly_fields = ("created_at", "updated_at")
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WorkflowTransition)
+class WorkflowTransitionAdmin(admin.ModelAdmin):
+    list_display = ("source_stage", "code", "name", "destination_stage", "active")
+    list_filter = ("active", "is_return", "requires_note", "requires_attachment")
     readonly_fields = ("created_at", "updated_at")
 
     def has_delete_permission(self, request, obj=None):

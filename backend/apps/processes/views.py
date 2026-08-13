@@ -10,9 +10,9 @@ from apps.documents.models import DocumentRole
 from apps.documents.serializers import ProcessDocumentSerializer
 from apps.documents.services import create_process_document
 
-from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessStatus, ProcessType, WorkflowStage
+from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
 from .filters import OperationalProcessSearchFilter
-from .permissions import ProcessPermission, ProcessTypePermission, WorkflowPermission, WorkflowStagePermission
+from .permissions import ProcessPermission, ProcessTypePermission, WorkflowPermission, WorkflowStagePermission, WorkflowTransitionPermission
 from .serializers import (
     ProcessActionSerializer,
     ProcessDestinationActionSerializer,
@@ -24,6 +24,7 @@ from .serializers import (
     ProcessTypeSerializer,
     AdministrativeWorkflowSerializer,
     WorkflowStageSerializer,
+    WorkflowTransitionSerializer,
     ProcessWriteSerializer,
 )
 from .services import (
@@ -303,4 +304,25 @@ class WorkflowStageViewSet(
             queryset = queryset.filter(workflow_version__workflow_id=workflow)
         if version:
             queryset = queryset.filter(workflow_version_id=version)
+        return queryset
+
+
+class WorkflowTransitionViewSet(
+    mixins.ListModelMixin, mixins.CreateModelMixin, mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin, viewsets.GenericViewSet,
+):
+    serializer_class = WorkflowTransitionSerializer
+    permission_classes = [WorkflowTransitionPermission]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_queryset(self):
+        queryset = WorkflowTransition.objects.select_related(
+            "source_stage__workflow_version", "destination_stage", "authorized_sector", "authorized_function"
+        )
+        workflow = self.request.query_params.get("workflow")
+        version = self.request.query_params.get("workflow_version")
+        if workflow:
+            queryset = queryset.filter(source_stage__workflow_version__workflow_id=workflow)
+        if version:
+            queryset = queryset.filter(source_stage__workflow_version_id=version)
         return queryset

@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from apps.sectors.models import Sector
 
-from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessStatus, ProcessType, WorkflowStage
+from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
 from .workflow_services import create_workflow, update_workflow
 from .services import create_process
 
@@ -73,6 +73,57 @@ class WorkflowStageSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         try:
             return super().create(validated_data)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from error
+
+
+class WorkflowTransitionSerializer(serializers.ModelSerializer):
+    source_name = serializers.CharField(source="source_stage.name", read_only=True)
+    destination_name = serializers.CharField(source="destination_stage.name", read_only=True)
+    sector_name = serializers.CharField(source="authorized_sector.name", read_only=True, allow_null=True)
+    function_name = serializers.CharField(source="authorized_function.name", read_only=True, allow_null=True)
+
+    class Meta:
+        model = WorkflowTransition
+        fields = (
+            "id", "source_stage", "source_name", "code", "name", "destination_stage", "destination_name",
+            "authorized_sector", "sector_name", "authorized_function", "function_name",
+            "requires_note", "requires_attachment", "is_return", "active", "created_at", "updated_at",
+        )
+        read_only_fields = ("created_at", "updated_at")
+
+    def validate(self, attrs):
+        source = attrs.get("source_stage", getattr(self.instance, "source_stage", None))
+        destination = attrs.get("destination_stage", getattr(self.instance, "destination_stage", None))
+        sector = attrs.get("authorized_sector", getattr(self.instance, "authorized_sector", None))
+        function = attrs.get("authorized_function", getattr(self.instance, "authorized_function", None))
+        is_return = attrs.get("is_return", getattr(self.instance, "is_return", False))
+        errors = {}
+        if source and destination and source.workflow_version_id != destination.workflow_version_id:
+            errors["destination_stage"] = "Origem e destino devem pertencer à mesma versão."
+        if source and source.workflow_version.workflow.current_version_id != source.workflow_version_id:
+            errors["source_stage"] = "Somente a versão atual pode receber alterações."
+        if source and source.is_final and not is_return:
+            errors["source_stage"] = "Etapa final só admite devolução explícita."
+        if sector and not sector.active:
+            errors["authorized_sector"] = "Selecione um setor ativo."
+        if function and not function.active:
+            errors["authorized_function"] = "Selecione uma função ativa."
+        if self.instance and (attrs.get("source_stage", self.instance.source_stage) != self.instance.source_stage or attrs.get("code", self.instance.code) != self.instance.code):
+            errors["code"] = "Código e origem são estáveis."
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
+    def create(self, validated_data):
+        try:
+            return super().create(validated_data)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from error
+
+    def update(self, instance, validated_data):
+        try:
+            return super().update(instance, validated_data)
         except DjangoValidationError as error:
             raise serializers.ValidationError(error.message_dict) from error
 
