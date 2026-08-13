@@ -1,6 +1,6 @@
 from django.db import transaction
 
-from .models import AdministrativeWorkflow, WorkflowStage, WorkflowVersion
+from .models import AdministrativeWorkflow, WorkflowStage, WorkflowTransition, WorkflowVersion
 
 
 @transaction.atomic
@@ -29,6 +29,20 @@ def update_workflow(*, workflow, name=None, description=None, active=None):
                 responsible_function=stage.responsible_function, requires_manager=stage.requires_manager,
             )
             for stage in current.stages.all()
+        ])
+        stage_by_order = {stage.order: stage for stage in version.stages.all()}
+        WorkflowTransition.objects.bulk_create([
+            WorkflowTransition(
+                source_stage=stage_by_order[transition.source_stage.order],
+                destination_stage=stage_by_order[transition.destination_stage.order],
+                code=transition.code, name=transition.name,
+                authorized_sector=transition.authorized_sector,
+                authorized_function=transition.authorized_function,
+                requires_note=transition.requires_note, requires_attachment=transition.requires_attachment,
+                is_return=transition.is_return, active=transition.active,
+            )
+            for transition in current.stages.all().prefetch_related("outgoing_transitions")
+            for transition in transition.outgoing_transitions.all()
         ])
         workflow.current_version = version
     if active is not None:

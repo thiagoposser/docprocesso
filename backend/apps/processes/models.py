@@ -143,6 +143,61 @@ class WorkflowStage(models.Model):
         return f"{self.order}. {self.name}"
 
 
+class WorkflowTransition(models.Model):
+    source_stage = models.ForeignKey(WorkflowStage, on_delete=models.PROTECT, related_name="outgoing_transitions")
+    destination_stage = models.ForeignKey(WorkflowStage, on_delete=models.PROTECT, related_name="incoming_transitions")
+    code = models.SlugField(max_length=50)
+    name = models.CharField(max_length=150)
+    authorized_sector = models.ForeignKey(
+        "sectors.Sector", on_delete=models.PROTECT, related_name="authorized_workflow_transitions", null=True, blank=True
+    )
+    authorized_function = models.ForeignKey(
+        "sectors.OrganizationalFunction", on_delete=models.PROTECT,
+        related_name="authorized_workflow_transitions", null=True, blank=True,
+    )
+    requires_note = models.BooleanField(default=False)
+    requires_attachment = models.BooleanField(default=False)
+    is_return = models.BooleanField(default=False)
+    active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["source_stage_id", "code", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["source_stage", "code"], name="unique_transition_code_per_source"),
+            models.CheckConstraint(condition=~models.Q(source_stage=models.F("destination_stage")), name="transition_changes_stage"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.source_stage_id and self.destination_stage_id:
+            if self.source_stage.workflow_version_id != self.destination_stage.workflow_version_id:
+                errors["destination_stage"] = "Origem e destino devem pertencer à mesma versão do fluxo."
+            if self.source_stage.workflow_version.workflow.current_version_id != self.source_stage.workflow_version_id:
+                errors["source_stage"] = "Somente a versão atual pode receber alterações."
+            if self.source_stage.is_final and not self.is_return:
+                errors["source_stage"] = "Etapa final só pode possuir uma transição explícita de devolução."
+        if self.authorized_sector_id and not self.authorized_sector.active:
+            errors["authorized_sector"] = "Selecione um setor autorizado ativo."
+        if self.authorized_function_id and not self.authorized_function.active:
+            errors["authorized_function"] = "Selecione uma função autorizada ativa."
+        if self.pk:
+            previous = WorkflowTransition.objects.filter(pk=self.pk).values("code", "source_stage_id").first()
+            if previous and (previous["code"] != self.code or previous["source_stage_id"] != self.source_stage_id):
+                errors["code"] = "O código e a etapa de origem da transição são estáveis."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.source_stage} — {self.name} → {self.destination_stage}"
+
+
 class AdministrativeProcess(models.Model):
     number = models.CharField(max_length=35, unique=True, default=generate_process_number, editable=False)
     title = models.CharField(max_length=200)
