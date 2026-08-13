@@ -1,12 +1,13 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 
-import { Sector, SectorPage, SectorPayload, SectorTreeNode } from '../models/sector.models';
+import { OrganizationalUnitPage, Sector, SectorPage, SectorPayload, SectorTreeNode } from '../models/sector.models';
 
 @Injectable({ providedIn: 'root' })
 export class SectorService {
   private readonly http = inject(HttpClient);
 
+  units(active = 'true') { return this.http.get<OrganizationalUnitPage>('/api/units/', { params: { active, ordering: 'name' } }); }
   list(search = '', active = '') {
     let params = new HttpParams().set('ordering', 'name');
     if (search) params = params.set('search', search);

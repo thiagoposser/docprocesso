@@ -14,10 +14,10 @@ class OrganizationalUnitAdmin(admin.ModelAdmin):
 
 @admin.register(Sector)
 class SectorAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "parent", "manager", "active", "updated_at")
-    list_filter = ("active", "parent")
-    search_fields = ("name", "code", "manager__username", "manager__first_name", "manager__last_name")
-    autocomplete_fields = ("parent", "manager")
+    list_display = ("name", "code", "unit", "parent", "manager", "active", "updated_at")
+    list_filter = ("active", "unit", "parent")
+    search_fields = ("name", "code", "unit__name", "unit__acronym", "manager__username", "manager__first_name", "manager__last_name")
+    autocomplete_fields = ("unit", "parent", "manager")
     readonly_fields = ("created_at", "updated_at")
 
 

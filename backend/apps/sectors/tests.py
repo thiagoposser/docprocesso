@@ -109,6 +109,14 @@ class OrganizationalUnitApiTests(APITestCase):
 
 
 class SectorModelTests(TestCase):
+    def test_rejects_parent_from_another_unit_when_both_are_defined(self):
+        first = OrganizationalUnit.objects.create(name="Primeira", acronym="FIRST")
+        second = OrganizationalUnit.objects.create(name="Segunda", acronym="SECOND")
+        parent = Sector.objects.create(name="Pai", unit=first)
+
+        with self.assertRaisesMessage(ValidationError, "mesma unidade"):
+            Sector.objects.create(name="Filho", unit=second, parent=parent)
+
     def test_supports_flexible_hierarchy_and_optional_manager(self):
         manager = get_user_model().objects.create_user(username="sector_manager")
         organization = Sector.objects.create(name="Organização", code="ORG", manager=manager)
@@ -172,9 +180,12 @@ class SectorApiTests(APITestCase):
         self.manager = users.objects.create_user(username="api_manager", password="safe-password")
         self.manager.user_permissions.add(Permission.objects.get(codename="manage_sector"))
         self.user = users.objects.create_user(username="api_user", password="safe-password")
-        self.root = Sector.objects.create(name="Organização", code="ORG", manager=self.manager)
-        self.active_child = Sector.objects.create(name="Financeiro", code="FIN", parent=self.root)
-        self.inactive = Sector.objects.create(name="Arquivo", code="ARQ", active=False)
+        self.unit = OrganizationalUnit.objects.create(name="Administração", acronym="ADM")
+        self.other_unit = OrganizationalUnit.objects.create(name="Regional", acronym="REG")
+        self.inactive_unit = OrganizationalUnit.objects.create(name="Histórica", acronym="HIST", active=False)
+        self.root = Sector.objects.create(name="Organização", code="ORG", unit=self.unit, manager=self.manager)
+        self.active_child = Sector.objects.create(name="Financeiro", code="FIN", unit=self.unit, parent=self.root)
+        self.inactive = Sector.objects.create(name="Arquivo", code="ARQ", unit=self.unit, active=False)
 
     def authenticate(self, user):
         self.client.force_authenticate(user)
@@ -186,11 +197,13 @@ class SectorApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 1)
         self.assertEqual(response.data["results"][0]["id"], self.active_child.pk)
+        self.assertEqual(response.data["results"][0]["unit_name"], self.unit.name)
         self.assertNotContains(self.client.get(reverse("sector-list")), "Arquivo")
+        self.assertEqual(self.client.get(reverse("sector-list"), {"unit": self.other_unit.pk}).data["count"], 0)
 
     def test_tree_is_ordered_nested_and_uses_a_bounded_query_count(self):
         self.authenticate(self.manager)
-        Sector.objects.create(name="Administrativo", code="ADM", parent=self.root)
+        Sector.objects.create(name="Administrativo", code="ADM", unit=self.unit, parent=self.root)
         SystemSettings.load()
 
         # Settings middleware (1), permission cache (2) and the complete tree (1).
@@ -207,7 +220,7 @@ class SectorApiTests(APITestCase):
         self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN)
 
         self.authenticate(self.manager)
-        created = self.client.post(reverse("sector-list"), {"name": "TI", "code": "TI", "parent": self.root.pk}, format="json")
+        created = self.client.post(reverse("sector-list"), {"name": "TI", "code": "TI", "unit": self.unit.pk, "parent": self.root.pk}, format="json")
         self.assertEqual(created.status_code, status.HTTP_201_CREATED)
         detail = reverse("sector-detail", args=[created.data["id"]])
         self.assertEqual(self.client.patch(detail, {"name": "Tecnologia"}, format="json").status_code, status.HTTP_200_OK)
@@ -215,7 +228,7 @@ class SectorApiTests(APITestCase):
 
     def test_rejects_inactive_parent_cycle_and_invalid_inactivation(self):
         self.authenticate(self.manager)
-        inactive_parent = self.client.post(reverse("sector-list"), {"name": "Inválido", "parent": self.inactive.pk}, format="json")
+        inactive_parent = self.client.post(reverse("sector-list"), {"name": "Inválido", "unit": self.unit.pk, "parent": self.inactive.pk}, format="json")
         self.assertEqual(inactive_parent.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("parent", inactive_parent.data)
 
@@ -226,6 +239,28 @@ class SectorApiTests(APITestCase):
         inactivation = self.client.patch(reverse("sector-detail", args=[self.root.pk]), {"active": False}, format="json")
         self.assertEqual(inactivation.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("active", inactivation.data)
+
+    def test_new_sector_requires_active_unit_and_compatible_parent(self):
+        self.authenticate(self.manager)
+        missing = self.client.post(reverse("sector-list"), {"name": "Sem unidade"}, format="json")
+        self.assertEqual(missing.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("unit", missing.data)
+
+        inactive = self.client.post(
+            reverse("sector-list"),
+            {"name": "Unidade inativa", "unit": self.inactive_unit.pk},
+            format="json",
+        )
+        self.assertEqual(inactive.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("unit", inactive.data)
+
+        incompatible = self.client.post(
+            reverse("sector-list"),
+            {"name": "Outro setor", "unit": self.other_unit.pk, "parent": self.root.pk},
+            format="json",
+        )
+        self.assertEqual(incompatible.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("parent", incompatible.data)
 
     def test_manager_can_filter_inactive_and_invalid_parent_filter_is_clear(self):
         self.authenticate(self.manager)
