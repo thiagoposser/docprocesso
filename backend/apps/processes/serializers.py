@@ -38,13 +38,13 @@ class ProcessDetailSerializer(ProcessListSerializer):
 class ProcessWriteSerializer(serializers.ModelSerializer):
     origin_membership = serializers.IntegerField(write_only=True, required=False)
     protected_fields = {
-        "number", "created_by", "current_sector", "status", "version",
+        "number", "created_by", "current_sector", "status", "version", "assignee",
         "origin_sector", "opened_at", "completed_at", "archived_at", "created_at", "updated_at",
     }
 
     class Meta:
         model = AdministrativeProcess
-        fields = ("title", "description", "process_type", "origin_membership", "assignee")
+        fields = ("title", "description", "process_type", "origin_membership")
 
     def to_internal_value(self, data):
         attempted = self.protected_fields.intersection(data)

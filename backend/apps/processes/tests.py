@@ -220,6 +220,16 @@ class AdministrativeProcessApiTests(APITestCase):
         self.assertEqual(relocation.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("origin_sector", relocation.data)
 
+    def test_rejects_arbitrary_assignee_on_creation(self):
+        response = self.client.post(
+            reverse("process-list"),
+            {"title": "Atribuição forjada", "process_type": self.process_type.pk, "assignee": self.other.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("assignee", response.data)
+        self.assertFalse(AdministrativeProcess.objects.filter(title="Atribuição forjada").exists())
+
     def test_selects_an_authorized_membership_when_multiple_are_available(self):
         second = Sector.objects.create(name="API Compras", code="API-COMP")
         second_membership = UserSectorMembership.objects.create(user=self.user, sector=second)
