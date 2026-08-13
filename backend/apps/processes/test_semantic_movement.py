@@ -21,10 +21,6 @@ class SemanticMovementTests(TestCase):
         UserSectorMembership.objects.create(user=self.user, sector=self.destination)
         self.user.user_permissions.add(Permission.objects.get(codename="forward_administrativeprocess"))
         process_type = ProcessType.objects.create(name="Semântico", code="semantico")
-        self.process = AdministrativeProcess.objects.create(
-            title="Movimento semântico", process_type=process_type, created_by=self.user,
-            origin_sector=self.origin, current_sector=self.origin, status=ProcessStatus.OPEN,
-        )
         self.workflow = create_workflow(code="semantic-flow", name="Semântico")
         self.source = WorkflowStage.objects.create(
             workflow_version=self.workflow.current_version, order=1, name="Origem", responsible_sector=self.origin,
@@ -35,6 +31,11 @@ class SemanticMovementTests(TestCase):
         self.transition = WorkflowTransition.objects.create(
             source_stage=self.source, destination_stage=self.target, code="enviar", name="Enviar",
             authorized_sector=self.origin,
+        )
+        self.process = AdministrativeProcess.objects.create(
+            title="Movimento semântico", process_type=process_type, created_by=self.user,
+            workflow_version=self.workflow.current_version, current_stage=self.source,
+            origin_sector=self.origin, current_sector=self.origin, status=ProcessStatus.OPEN,
         )
 
     def execute(self, **changes):

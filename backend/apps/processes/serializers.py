@@ -211,6 +211,20 @@ class ProcessActionSerializer(serializers.Serializer):
     note = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True, max_length=2000, default="")
 
 
+class ExecuteWorkflowTransitionSerializer(ProcessActionSerializer):
+    action = serializers.SlugField(max_length=50)
+
+
+class AvailableWorkflowActionSerializer(serializers.Serializer):
+    action = serializers.CharField(read_only=True)
+    label = serializers.CharField(read_only=True)
+    destination_stage = serializers.IntegerField(read_only=True)
+    destination_stage_name = serializers.CharField(read_only=True)
+    requires_note = serializers.BooleanField(read_only=True)
+    requires_attachment = serializers.BooleanField(read_only=True)
+    is_return = serializers.BooleanField(read_only=True)
+
+
 class ProcessDestinationActionSerializer(ProcessActionSerializer):
     destination = serializers.PrimaryKeyRelatedField(queryset=Sector.objects.filter(active=True))
 

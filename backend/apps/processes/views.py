@@ -15,6 +15,8 @@ from .filters import OperationalProcessSearchFilter
 from .permissions import ProcessPermission, ProcessTypePermission, WorkflowPermission, WorkflowStagePermission, WorkflowTransitionPermission
 from .serializers import (
     ProcessActionSerializer,
+    AvailableWorkflowActionSerializer,
+    ExecuteWorkflowTransitionSerializer,
     ProcessDetailSerializer,
     ProcessListSerializer,
     ProcessTimelineEntrySerializer,
@@ -37,6 +39,10 @@ from .services import (
     receive_process,
     reopen_process,
 )
+from .workflow_execution import (
+    TransitionDenied, TransitionVersionConflict, UnresolvedTransitionSector, execute_semantic_movement,
+)
+from .workflow_policies import evaluate_transition_authorization
 
 
 class ProcessViewSet(
@@ -61,6 +67,8 @@ class ProcessViewSet(
             return ProcessRequiredNoteActionSerializer
         if self.action in {"open", "receive", "complete", "archive"}:
             return ProcessActionSerializer
+        if self.action == "execute_transition":
+            return ExecuteWorkflowTransitionSerializer
         if self.action == "timeline":
             return ProcessTimelineEntrySerializer
         if self.action == "documents":
@@ -186,6 +194,69 @@ class ProcessViewSet(
     @action(detail=True, methods=["post"])
     def archive(self, request, pk=None):
         return self._execute_action(request, archive_process)
+
+    @action(detail=True, methods=["get"], url_path="available-actions", url_name="available-actions")
+    def available_actions(self, request, pk=None):
+        process = self.get_object()
+        if not process.current_stage_id or not process.workflow_version_id:
+            return Response([])
+        actions = []
+        for transition in process.current_stage.outgoing_transitions.filter(active=True).select_related("destination_stage"):
+            permission = (
+                "processes.return_administrativeprocess"
+                if transition.is_return else "processes.forward_administrativeprocess"
+            )
+            decision = evaluate_transition_authorization(
+                request.user, transition=transition, current_stage=process.current_stage,
+                process_status=process.status, permission=permission,
+                note="requirement-preview" if transition.requires_note else "",
+                has_attachment=transition.requires_attachment,
+            )
+            if decision.allowed:
+                actions.append({
+                    "action": transition.code, "label": transition.name,
+                    "destination_stage": transition.destination_stage_id,
+                    "destination_stage_name": transition.destination_stage.name,
+                    "requires_note": transition.requires_note,
+                    "requires_attachment": transition.requires_attachment,
+                    "is_return": transition.is_return,
+                })
+        return Response(AvailableWorkflowActionSerializer(actions, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="transitions", url_name="transitions")
+    def execute_transition(self, request, pk=None):
+        process = self.get_object()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if not process.current_stage_id or not process.workflow_version_id:
+            raise ValidationError({"detail": "Processo legado ainda não possui contexto de fluxo."})
+        transition = process.current_stage.outgoing_transitions.filter(
+            code=serializer.validated_data["action"], active=True
+        ).first()
+        if transition is None:
+            raise PermissionDenied("Ação não disponível para a etapa atual.")
+        has_attachment = process.documents.filter(active=True).filter(
+            Q(file__gt="") | Q(external_url__gt="") | Q(attachments__active=True)
+        ).exists()
+        try:
+            updated = execute_semantic_movement(
+                user=request.user, process_id=process.pk, transition_id=transition.pk,
+                current_stage_id=process.current_stage_id,
+                expected_process_version=serializer.validated_data["version"],
+                expected_workflow_version_id=process.workflow_version_id,
+                note=serializer.validated_data.get("note", ""), has_attachment=has_attachment,
+            )
+        except TransitionVersionConflict as error:
+            return Response({"detail": str(error)}, status=status.HTTP_409_CONFLICT)
+        except ProcessConflictError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_409_CONFLICT)
+        except TransitionDenied as error:
+            if error.reason in {"note_required", "attachment_required"}:
+                return Response({"detail": error.reason}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            raise PermissionDenied(error.reason) from error
+        except UnresolvedTransitionSector as error:
+            raise ValidationError({"detail": str(error)}) from error
+        return Response(ProcessDetailSerializer(updated, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["get"])
     def timeline(self, request, pk=None):
