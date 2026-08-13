@@ -43,6 +43,7 @@ function permissionGuard(permission: string): CanActivateFn {
 export const processViewGuard = permissionGuard('processes.view_administrativeprocess');
 export const processAddGuard = permissionGuard('processes.add_administrativeprocess');
 export const processChangeGuard = permissionGuard('processes.change_administrativeprocess');
+export const workflowGuard = permissionGuard('processes.view_administrativeworkflow');
 export const paymentViewGuard: CanActivateFn = () => {
   const auth = inject(AuthService); const router = inject(Router);
   return auth.restore().pipe(map(() => auth.can('payments.view_payment') && auth.can('payments.view_financial_data') && auth.can('processes.view_administrativeprocess') ? true : router.createUrlTree(['/403'])));

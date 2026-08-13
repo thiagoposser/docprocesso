@@ -1,0 +1,4 @@
+export interface Workflow { id:number; code:string; name:string; description:string; active:boolean; current_version:number; version:number; }
+export interface WorkflowStage { id:number; workflow_version:number; order:number; name:string; description:string; is_initial:boolean; is_final:boolean; responsible_sector:number|null; sector_name:string|null; responsible_function:number|null; function_name:string|null; requires_manager:boolean; }
+export interface WorkflowTransition { id:number; source_stage:number; source_name:string; code:string; name:string; destination_stage:number; destination_name:string; authorized_sector:number|null; sector_name:string|null; authorized_function:number|null; function_name:string|null; requires_note:boolean; requires_attachment:boolean; is_return:boolean; active:boolean; }
+export interface Page<T> { count:number; results:T[]; }

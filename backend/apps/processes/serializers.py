@@ -21,8 +21,8 @@ class AdministrativeWorkflowSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AdministrativeWorkflow
-        fields = ("id", "code", "name", "description", "active", "version", "created_at", "updated_at")
-        read_only_fields = ("created_at", "updated_at")
+        fields = ("id", "code", "name", "description", "active", "current_version", "version", "created_at", "updated_at")
+        read_only_fields = ("current_version", "created_at", "updated_at")
 
     def create(self, validated_data):
         version = validated_data.pop("current_version")
