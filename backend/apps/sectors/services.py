@@ -2,6 +2,9 @@ def build_sector_tree(sectors):
     nodes = {
         sector.pk: {
             "id": sector.pk,
+            "unit": sector.unit_id,
+            "unit_name": sector.unit.name if sector.unit else None,
+            "unit_acronym": sector.unit.acronym if sector.unit else None,
             "name": sector.name,
             "code": sector.code,
             "parent": sector.parent_id,

@@ -41,22 +41,40 @@ class OrganizationalUnitSerializer(serializers.ModelSerializer):
 
 
 class SectorSerializer(serializers.ModelSerializer):
+    unit_name = serializers.CharField(source="unit.name", read_only=True)
+    unit_acronym = serializers.CharField(source="unit.acronym", read_only=True)
     parent_name = serializers.CharField(source="parent.name", read_only=True)
     manager_name = serializers.CharField(source="manager.full_name", read_only=True)
 
     class Meta:
         model = Sector
         fields = (
-            "id", "name", "code", "parent", "parent_name", "manager", "manager_name",
+            "id", "unit", "unit_name", "unit_acronym", "name", "code",
+            "parent", "parent_name", "manager", "manager_name",
             "active", "created_at", "updated_at",
         )
-        read_only_fields = ("id", "parent_name", "manager_name", "created_at", "updated_at")
+        read_only_fields = (
+            "id", "unit_name", "unit_acronym", "parent_name", "manager_name",
+            "created_at", "updated_at",
+        )
 
     def validate(self, attrs):
+        unit = attrs.get("unit", getattr(self.instance, "unit", None))
+        unit_changed = "unit" in attrs and (not self.instance or unit != self.instance.unit)
+        if not self.instance and unit is None:
+            raise serializers.ValidationError({"unit": "Selecione a unidade do setor."})
+        if unit_changed and unit and not unit.active:
+            raise serializers.ValidationError({"unit": "Selecione uma unidade ativa."})
+
         parent = attrs.get("parent") if "parent" in attrs else None
         parent_changed = "parent" in attrs and (not self.instance or parent != self.instance.parent)
         if parent_changed and parent and not parent.active:
             raise serializers.ValidationError({"parent": "Selecione um setor pai ativo."})
+        effective_parent = parent if "parent" in attrs else getattr(self.instance, "parent", None)
+        if effective_parent and unit and effective_parent.unit_id != unit.id:
+            raise serializers.ValidationError({"parent": "O setor pai deve pertencer à mesma unidade."})
+        if self.instance and unit_changed and unit and self.instance.children.exclude(unit=unit).exclude(unit__isnull=True).exists():
+            raise serializers.ValidationError({"unit": "A unidade deve ser compatível com os setores filhos."})
 
         active = attrs.get("active", getattr(self.instance, "active", True))
         if self.instance and not active and self.instance.children.filter(active=True).exists():

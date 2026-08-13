@@ -57,6 +57,13 @@ class OrganizationalUnit(models.Model):
 
 
 class Sector(models.Model):
+    unit = models.ForeignKey(
+        OrganizationalUnit,
+        on_delete=models.PROTECT,
+        related_name="sectors",
+        blank=True,
+        null=True,
+    )
     name = models.CharField(max_length=150, db_index=True)
     code = models.CharField(max_length=30, unique=True, blank=True, null=True)
     parent = models.ForeignKey(
@@ -91,6 +98,8 @@ class Sector(models.Model):
         super().clean()
         if self.code == "":
             self.code = None
+        if self.unit_id and self.parent_id and self.parent.unit_id and self.parent.unit_id != self.unit_id:
+            raise ValidationError({"parent": "O setor pai deve pertencer à mesma unidade."})
         if self.parent_id is None:
             return
         if self.pk and self.parent_id == self.pk:

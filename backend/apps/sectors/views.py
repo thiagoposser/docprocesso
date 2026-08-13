@@ -66,14 +66,14 @@ class SectorViewSet(
     serializer_class = SectorSerializer
     permission_classes = [SectorPermission]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["name", "code", "manager__username", "manager__first_name", "manager__last_name"]
+    search_fields = ["name", "code", "unit__name", "unit__acronym", "manager__username", "manager__first_name", "manager__last_name"]
     ordering_fields = ["name", "code", "active", "created_at", "updated_at"]
     ordering = ["name", "id"]
     audit_label = "setor"
-    audit_fields = ("name", "code", "parent", "manager", "active")
+    audit_fields = ("unit", "name", "code", "parent", "manager", "active")
 
     def get_queryset(self):
-        queryset = Sector.objects.select_related("parent", "manager")
+        queryset = Sector.objects.select_related("unit", "parent", "manager")
         params = self.request.query_params
         if not can_manage_sectors(self.request.user):
             queryset = queryset.filter(active=True)
@@ -88,6 +88,12 @@ class SectorViewSet(
                 queryset = queryset.filter(parent_id=int(parent))
             except ValueError as error:
                 raise ValidationError({"parent": "Informe um ID de setor ou 'root'."}) from error
+        unit = params.get("unit")
+        if unit:
+            try:
+                queryset = queryset.filter(unit_id=int(unit))
+            except ValueError as error:
+                raise ValidationError({"unit": "Informe um ID de unidade válido."}) from error
         return queryset
 
     @action(detail=False, methods=["get"])
