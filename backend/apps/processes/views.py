@@ -130,6 +130,64 @@ class ProcessViewSet(
         instance = serializer.save()
         return Response(ProcessDetailSerializer(instance, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=["get"])
+    def workbox(self, request):
+        scope = request.query_params.get("scope", "my-action")
+        if scope not in {"my-action", "my-sector", "created", "following", "completed"}:
+            raise ValidationError({"scope": "Informe uma categoria válida da caixa de trabalho."})
+        queryset = self.filter_queryset(self.get_queryset())
+        user = request.user
+        memberships = user.sector_memberships.effective()
+        sector_ids = memberships.values_list("sector_id", flat=True)
+        function_ids = memberships.exclude(function_id__isnull=True).values_list("function_id", flat=True)
+        if scope == "my-action":
+            if not user.is_superuser:
+                transition_permission = Q()
+                if user.has_perm("processes.forward_administrativeprocess"):
+                    transition_permission |= Q(current_stage__outgoing_transitions__is_return=False)
+                if user.has_perm("processes.return_administrativeprocess"):
+                    transition_permission |= Q(current_stage__outgoing_transitions__is_return=True)
+                if not transition_permission:
+                    queryset = queryset.none()
+                else:
+                    explicit = (
+                        Q(current_stage__outgoing_transitions__authorized_sector_id__isnull=False)
+                        | Q(current_stage__outgoing_transitions__authorized_function_id__isnull=False)
+                    )
+                    explicit &= (
+                        Q(current_stage__outgoing_transitions__authorized_sector_id__isnull=True)
+                        | Q(current_stage__outgoing_transitions__authorized_sector_id__in=sector_ids)
+                    ) & (
+                        Q(current_stage__outgoing_transitions__authorized_function_id__isnull=True)
+                        | Q(current_stage__outgoing_transitions__authorized_function_id__in=function_ids)
+                    )
+                    fallback = (
+                        Q(current_stage__outgoing_transitions__authorized_sector_id__isnull=True)
+                        & Q(current_stage__outgoing_transitions__authorized_function_id__isnull=True)
+                        & (Q(current_stage__responsible_sector_id__isnull=True) | Q(current_stage__responsible_sector_id__in=sector_ids))
+                        & (Q(current_stage__responsible_function_id__isnull=True) | Q(current_stage__responsible_function_id__in=function_ids))
+                    )
+                    queryset = queryset.filter(
+                        transition_permission,
+                        Q(current_stage__outgoing_transitions__active=True),
+                        explicit | fallback,
+                    )
+            queryset = queryset.exclude(status__in=[ProcessStatus.COMPLETED, ProcessStatus.CANCELLED, ProcessStatus.ARCHIVED])
+        elif scope == "my-sector":
+            queryset = queryset.filter(
+                Q(current_sector_id__in=sector_ids) | Q(current_sector__isnull=True, origin_sector_id__in=sector_ids)
+            )
+        elif scope == "created":
+            queryset = queryset.filter(created_by=user)
+        elif scope == "following":
+            queryset = queryset.filter(Q(created_by=user) | Q(movements__actor=user))
+        else:
+            queryset = queryset.filter(status__in=[ProcessStatus.COMPLETED, ProcessStatus.ARCHIVED])
+        queryset = queryset.distinct()
+        page = self.paginate_queryset(queryset)
+        serializer = ProcessListSerializer(page if page is not None else queryset, many=True)
+        return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)

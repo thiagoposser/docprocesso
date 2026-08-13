@@ -8,6 +8,14 @@ export class ProcessService {
   private readonly http = inject(HttpClient);
 
   list(query: ProcessQuery = {}) {
+    return this.http.get<ProcessPage>('/api/processes/', { params: this.queryParams(query) });
+  }
+
+  workbox(scope: string, query: ProcessQuery = {}) {
+    return this.http.get<ProcessPage>('/api/processes/workbox/', { params: this.queryParams(query).set('scope', scope) });
+  }
+
+  private queryParams(query: ProcessQuery) {
     let params = new HttpParams().set('ordering', query.ordering || '-updated_at');
     const values: Record<string, string | number | undefined> = {
       search: query.search, number: query.number, type: query.type, status: query.status,
@@ -15,7 +23,7 @@ export class ProcessService {
       created_to: query.createdTo, page: query.page
     };
     for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== '') params = params.set(key, value);
-    return this.http.get<ProcessPage>('/api/processes/', { params });
+    return params;
   }
 
   types() { return this.http.get<ProcessType[]>('/api/process-types/'); }
