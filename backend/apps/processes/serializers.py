@@ -36,14 +36,15 @@ class ProcessDetailSerializer(ProcessListSerializer):
 
 
 class ProcessWriteSerializer(serializers.ModelSerializer):
+    origin_membership = serializers.IntegerField(write_only=True, required=False)
     protected_fields = {
         "number", "created_by", "current_sector", "status", "version",
-        "opened_at", "completed_at", "archived_at", "created_at", "updated_at",
+        "origin_sector", "opened_at", "completed_at", "archived_at", "created_at", "updated_at",
     }
 
     class Meta:
         model = AdministrativeProcess
-        fields = ("title", "description", "process_type", "origin_sector", "assignee")
+        fields = ("title", "description", "process_type", "origin_membership", "assignee")
 
     def to_internal_value(self, data):
         attempted = self.protected_fields.intersection(data)
@@ -56,16 +57,11 @@ class ProcessWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Selecione um tipo de processo ativo.")
         return value
 
-    def validate_origin_sector(self, value):
-        if self.instance and value != self.instance.origin_sector:
-            raise serializers.ValidationError("O setor de origem não pode ser alterado por este endpoint.")
-        if not value.active and (not self.instance or value != self.instance.origin_sector):
-            raise serializers.ValidationError("Selecione um setor de origem ativo.")
-        return value
-
     def validate(self, attrs):
         if self.instance and self.instance.status != ProcessStatus.DRAFT:
             raise serializers.ValidationError("Somente processos em rascunho podem ser editados por este endpoint.")
+        if self.instance and "origin_membership" in attrs:
+            raise serializers.ValidationError({"origin_membership": "A origem não pode ser alterada após a criação."})
         return attrs
 
     def create(self, validated_data):
@@ -75,6 +71,7 @@ class ProcessWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(error.message_dict) from error
 
     def update(self, instance, validated_data):
+        validated_data.pop("origin_membership", None)
         for field, value in validated_data.items():
             setattr(instance, field, value)
         try:
