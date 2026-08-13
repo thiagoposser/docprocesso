@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from apps.sectors.models import Sector
 
-from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessStatus, ProcessType
+from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessStatus, ProcessType, WorkflowStage
 from .workflow_services import create_workflow, update_workflow
 from .services import create_process
 
@@ -36,6 +36,51 @@ class AdministrativeWorkflowSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         version = validated_data.pop("current_version", {})
         return update_workflow(workflow=instance, active=validated_data.get("active"), **version)
+
+
+class WorkflowStageSerializer(serializers.ModelSerializer):
+    sector_name = serializers.CharField(source="responsible_sector.name", read_only=True, allow_null=True)
+    function_name = serializers.CharField(source="responsible_function.name", read_only=True, allow_null=True)
+
+    class Meta:
+        model = WorkflowStage
+        fields = (
+            "id", "workflow_version", "order", "name", "description", "is_initial", "is_final",
+            "responsible_sector", "sector_name", "responsible_function", "function_name",
+            "requires_manager", "created_at", "updated_at",
+        )
+        read_only_fields = ("created_at", "updated_at")
+
+    def validate(self, attrs):
+        version = attrs.get("workflow_version", getattr(self.instance, "workflow_version", None))
+        sector = attrs.get("responsible_sector", getattr(self.instance, "responsible_sector", None))
+        function = attrs.get("responsible_function", getattr(self.instance, "responsible_function", None))
+        errors = {}
+        if version and version.workflow.current_version_id != version.id:
+            errors["workflow_version"] = "Somente a versão atual pode receber alterações."
+        if not sector and not function:
+            errors["responsibility"] = "Informe um setor ou uma função responsável."
+        if sector and not sector.active:
+            errors["responsible_sector"] = "Selecione um setor ativo."
+        if function and not function.active:
+            errors["responsible_function"] = "Selecione uma função ativa."
+        if self.instance and "workflow_version" in attrs and version != self.instance.workflow_version:
+            errors["workflow_version"] = "A etapa não pode ser movida entre versões."
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
+    def create(self, validated_data):
+        try:
+            return super().create(validated_data)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from error
+
+    def update(self, instance, validated_data):
+        try:
+            return super().update(instance, validated_data)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from error
 
 
 class ProcessListSerializer(serializers.ModelSerializer):

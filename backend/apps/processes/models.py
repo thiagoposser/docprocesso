@@ -93,6 +93,56 @@ class WorkflowVersion(models.Model):
         return f"{self.name} v{self.version}"
 
 
+class WorkflowStage(models.Model):
+    workflow_version = models.ForeignKey(WorkflowVersion, on_delete=models.PROTECT, related_name="stages")
+    order = models.PositiveIntegerField()
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True)
+    is_initial = models.BooleanField(default=False)
+    is_final = models.BooleanField(default=False)
+    responsible_sector = models.ForeignKey(
+        "sectors.Sector", on_delete=models.PROTECT, related_name="workflow_stages", null=True, blank=True
+    )
+    responsible_function = models.ForeignKey(
+        "sectors.OrganizationalFunction", on_delete=models.PROTECT, related_name="workflow_stages", null=True, blank=True
+    )
+    requires_manager = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["workflow_version_id", "order", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["workflow_version", "order"], name="unique_workflow_stage_order"),
+            models.UniqueConstraint(fields=["workflow_version"], condition=models.Q(is_initial=True), name="unique_initial_stage_per_version"),
+            models.UniqueConstraint(fields=["workflow_version"], condition=models.Q(is_final=True), name="unique_final_stage_per_version"),
+            models.CheckConstraint(condition=models.Q(order__gte=1), name="workflow_stage_order_gte_1"),
+            models.CheckConstraint(
+                condition=models.Q(responsible_sector__isnull=False) | models.Q(responsible_function__isnull=False),
+                name="workflow_stage_has_responsibility",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.responsible_sector_id and not self.responsible_sector.active:
+            errors["responsible_sector"] = "Selecione um setor ativo para uma nova configuração."
+        if self.responsible_function_id and not self.responsible_function.active:
+            errors["responsible_function"] = "Selecione uma função ativa para uma nova configuração."
+        if self.workflow_version_id and self.workflow_version.workflow.current_version_id != self.workflow_version_id:
+            errors["workflow_version"] = "Somente a versão atual do fluxo pode receber alterações."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.order}. {self.name}"
+
+
 class AdministrativeProcess(models.Model):
     number = models.CharField(max_length=35, unique=True, default=generate_process_number, editable=False)
     title = models.CharField(max_length=200)
