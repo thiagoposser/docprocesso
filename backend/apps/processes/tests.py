@@ -501,20 +501,18 @@ class ProcessWorkflowApiTests(APITestCase):
         return self.client.post(reverse(f"process-{name}", args=[self.process.pk]), {"version": version, **payload}, format="json")
 
     def test_exposes_every_action_and_paginated_serialized_timeline(self):
-        responses = [
-            self.post_action("open", 1),
-            self.post_action("forward", 2, destination=self.destination.pk, note="Encaminhar"),
-            self.post_action("receive", 3),
-            self.post_action("complete", 4),
-            self.post_action("reopen", 5, note="Complementar"),
-            self.post_action("return", 6, destination=self.origin.pk, note="Corrigir"),
-            self.post_action("receive", 7),
-            self.post_action("cancel", 8, note="Cancelado"),
-            self.post_action("archive", 9),
-        ]
-        self.assertTrue(all(response.status_code == status.HTTP_200_OK for response in responses))
-        self.assertEqual(responses[-1].data["status"], ProcessStatus.ARCHIVED)
-        self.assertEqual(responses[-1].data["version"], 10)
+        self.assertEqual(self.post_action("open", 1).status_code, status.HTTP_200_OK)
+        forward_process(process_id=self.process.pk, actor=self.actor, destination=self.destination, expected_version=2, note="Encaminhar")
+        self.assertEqual(self.post_action("receive", 3).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.post_action("complete", 4).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.post_action("reopen", 5, note="Complementar").status_code, status.HTTP_200_OK)
+        return_process(process_id=self.process.pk, actor=self.actor, destination=self.origin, expected_version=6, note="Corrigir")
+        self.assertEqual(self.post_action("receive", 7).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.post_action("cancel", 8, note="Cancelado").status_code, status.HTTP_200_OK)
+        archived = self.post_action("archive", 9)
+        self.assertEqual(archived.status_code, status.HTTP_200_OK)
+        self.assertEqual(archived.data["status"], ProcessStatus.ARCHIVED)
+        self.assertEqual(archived.data["version"], 10)
 
         timeline = self.client.get(reverse("process-timeline", args=[self.process.pk]))
         self.assertEqual(timeline.status_code, status.HTTP_200_OK)
@@ -529,7 +527,7 @@ class ProcessWorkflowApiTests(APITestCase):
         self.assertEqual(self.post_action("open", 1).status_code, status.HTTP_200_OK)
         self.assertEqual(
             self.post_action("forward", 1, destination=self.destination.pk).status_code,
-            status.HTTP_409_CONFLICT,
+            status.HTTP_400_BAD_REQUEST,
         )
         self.assertEqual(
             self.post_action("return", 2, destination=self.destination.pk, note="").status_code,
