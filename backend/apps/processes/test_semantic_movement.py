@@ -17,6 +17,9 @@ class SemanticMovementTests(TestCase):
         self.user = get_user_model().objects.create_user(username="semantic_actor")
         self.origin = Sector.objects.create(name="Origem semântica", code="SEM-O")
         self.destination = Sector.objects.create(name="Destino semântico", code="SEM-D")
+        self.destination_function = OrganizationalFunction.objects.create(
+            name="Analista semântico", code="SEM-AN"
+        )
         UserSectorMembership.objects.create(user=self.user, sector=self.origin, is_primary=True)
         UserSectorMembership.objects.create(user=self.user, sector=self.destination)
         self.user.user_permissions.add(Permission.objects.get(codename="forward_administrativeprocess"))
@@ -26,7 +29,8 @@ class SemanticMovementTests(TestCase):
             workflow_version=self.workflow.current_version, order=1, name="Origem", responsible_sector=self.origin,
         )
         self.target = WorkflowStage.objects.create(
-            workflow_version=self.workflow.current_version, order=2, name="Destino", responsible_sector=self.destination,
+            workflow_version=self.workflow.current_version, order=2, name="Destino",
+            responsible_sector=self.destination, responsible_function=self.destination_function,
         )
         self.transition = WorkflowTransition.objects.create(
             source_stage=self.source, destination_stage=self.target, code="enviar", name="Enviar",
@@ -35,7 +39,7 @@ class SemanticMovementTests(TestCase):
         self.process = AdministrativeProcess.objects.create(
             title="Movimento semântico", process_type=process_type, created_by=self.user,
             workflow_version=self.workflow.current_version, current_stage=self.source,
-            origin_sector=self.origin, current_sector=self.origin, status=ProcessStatus.OPEN,
+            origin_sector=self.origin, current_sector=self.origin, status=ProcessStatus.OPEN, assignee=self.user,
         )
 
     def execute(self, **changes):
@@ -52,6 +56,16 @@ class SemanticMovementTests(TestCase):
         self.assertEqual(updated.current_sector, self.destination)
         movement = ProcessMovement.objects.get(process=self.process)
         self.assertEqual(movement.to_sector, self.destination)
+        self.assertEqual(movement.workflow_version, self.workflow.current_version)
+        self.assertEqual(movement.transition, self.transition)
+        self.assertEqual(movement.from_stage, self.source)
+        self.assertEqual(movement.to_stage, self.target)
+        self.assertEqual(movement.from_responsible_sector, self.origin)
+        self.assertEqual(movement.to_responsible_sector, self.destination)
+        self.assertEqual(movement.to_responsible_function, self.destination_function)
+        self.assertEqual(movement.from_assignee, self.user)
+        self.assertIsNone(movement.to_assignee)
+        self.assertIsNone(updated.assignee)
 
     def test_rejects_stage_jump_and_destination_without_sector(self):
         wrong = WorkflowStage.objects.create(

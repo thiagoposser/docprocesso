@@ -80,6 +80,17 @@ class ProcessTransitionApiTests(APITestCase):
         self.assertEqual(executed.data["current_sector"], self.destination.pk)
         self.assertEqual(executed.data["responsible_sector"], self.destination.pk)
         self.assertEqual(executed.data["responsible_function"], self.target_function.pk)
+        timeline = self.client.get(reverse("process-timeline", args=[self.process.pk]))
+        self.assertEqual(timeline.status_code, status.HTTP_200_OK)
+        fact = timeline.data["results"][0]
+        self.assertEqual(fact["transition_code"], "aprovar")
+        self.assertEqual(fact["workflow_version_number"], 1)
+        self.assertEqual(fact["from_stage_name"], "Solicitação")
+        self.assertEqual(fact["to_stage_name"], "Aprovação")
+        self.assertEqual(fact["from_responsibility"], self.origin.name)
+        self.assertEqual(
+            fact["to_responsibility"], f"{self.destination.name} · {self.target_function.name}"
+        )
 
     def test_rejects_illegal_stale_and_terminal_actions(self):
         illegal = self.client.post(self.execute_url, {"action": "inexistente", "version": 1}, format="json")

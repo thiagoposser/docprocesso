@@ -145,10 +145,13 @@ def _validate_destination(process, action, destination):
 
 
 @transaction.atomic
-def _perform_action(*, process_id, actor, action, expected_version, destination=None, note=""):
+def _perform_action(*, process_id, actor, action, expected_version, destination=None, note="", workflow_transition=None):
     process = (
         AdministrativeProcess.objects.select_for_update(of=("self",))
-        .select_related("origin_sector", "current_sector")
+        .select_related(
+            "origin_sector", "current_sector", "workflow_version", "current_stage",
+            "responsible_sector", "responsible_function", "assignee",
+        )
         .get(pk=process_id)
     )
     _validate_version(process, expected_version)
@@ -168,10 +171,19 @@ def _perform_action(*, process_id, actor, action, expected_version, destination=
 
     status_before = process.status
     status_after = TRANSITIONS[action][1]
+    stage_before = process.current_stage
+    responsible_sector_before = process.responsible_sector
+    responsible_function_before = process.responsible_function
+    assignee_before = process.assignee
     now = timezone.now()
     process.status = status_after
     if action in {ProcessMovementAction.OPEN, ProcessMovementAction.FORWARD, ProcessMovementAction.RETURN}:
         process.current_sector = target
+    if workflow_transition is not None:
+        process.current_stage = workflow_transition.destination_stage
+        process.responsible_sector = workflow_transition.destination_stage.responsible_sector
+        process.responsible_function = workflow_transition.destination_stage.responsible_function
+        process.assignee = None
     if action == ProcessMovementAction.OPEN:
         process.opened_at = now
     elif action == ProcessMovementAction.COMPLETE:
@@ -195,6 +207,16 @@ def _perform_action(*, process_id, actor, action, expected_version, destination=
         note=note.strip(),
         status_before=status_before,
         status_after=status_after,
+        workflow_version=process.workflow_version if workflow_transition is not None else None,
+        transition=workflow_transition,
+        from_stage=stage_before if workflow_transition is not None else None,
+        to_stage=process.current_stage if workflow_transition is not None else None,
+        from_responsible_sector=responsible_sector_before if workflow_transition is not None else None,
+        to_responsible_sector=process.responsible_sector if workflow_transition is not None else None,
+        from_responsible_function=responsible_function_before if workflow_transition is not None else None,
+        to_responsible_function=process.responsible_function if workflow_transition is not None else None,
+        from_assignee=assignee_before if workflow_transition is not None else None,
+        to_assignee=process.assignee if workflow_transition is not None else None,
     )
     record_audit(
         action=AuditAction.PROCESS_WORKFLOW,
@@ -211,16 +233,24 @@ def open_process(*, process_id, actor, expected_version, note=""):
     return _perform_action(process_id=process_id, actor=actor, action=ProcessMovementAction.OPEN, expected_version=expected_version, note=note)
 
 
-def forward_process(*, process_id, actor, destination, expected_version, note=""):
-    return _perform_action(process_id=process_id, actor=actor, action=ProcessMovementAction.FORWARD, destination=destination, expected_version=expected_version, note=note)
+def forward_process(*, process_id, actor, destination, expected_version, note="", workflow_transition=None):
+    return _perform_action(
+        process_id=process_id, actor=actor, action=ProcessMovementAction.FORWARD,
+        destination=destination, expected_version=expected_version, note=note,
+        workflow_transition=workflow_transition,
+    )
 
 
 def receive_process(*, process_id, actor, expected_version, note=""):
     return _perform_action(process_id=process_id, actor=actor, action=ProcessMovementAction.RECEIVE, expected_version=expected_version, note=note)
 
 
-def return_process(*, process_id, actor, destination, expected_version, note):
-    return _perform_action(process_id=process_id, actor=actor, action=ProcessMovementAction.RETURN, destination=destination, expected_version=expected_version, note=note)
+def return_process(*, process_id, actor, destination, expected_version, note, workflow_transition=None):
+    return _perform_action(
+        process_id=process_id, actor=actor, action=ProcessMovementAction.RETURN,
+        destination=destination, expected_version=expected_version, note=note,
+        workflow_transition=workflow_transition,
+    )
 
 
 def complete_process(*, process_id, actor, expected_version, note=""):
