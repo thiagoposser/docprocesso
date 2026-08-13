@@ -16,7 +16,7 @@ export interface ProcessItem {
 }
 
 export interface ProcessPayload {
-  title: string; description: string; process_type: number; origin_sector: number; assignee: number | null;
+  title: string; description: string; process_type: number; origin_membership?: number; assignee: number | null;
 }
 
 export interface ProcessQuery {

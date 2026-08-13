@@ -1,8 +1,9 @@
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 
 from apps.sectors.policies import evaluate_sector_access
+from apps.sectors.models import UserSectorMembership
 from apps.audit.models import AuditAction
 from apps.audit.services import record_audit
 
@@ -60,8 +61,24 @@ PERMISSIONS = {
 
 
 @transaction.atomic
-def create_process(*, user, **validated_data):
-    origin_sector = validated_data["origin_sector"]
+def create_process(*, user, origin_membership=None, **validated_data):
+    memberships = UserSectorMembership.objects.effective().filter(user=user).select_related("sector")
+    if origin_membership is not None:
+        membership = memberships.filter(pk=origin_membership).first()
+        if membership is None:
+            raise PermissionDenied("O vínculo de origem informado não está ativo ou não pertence ao usuário.")
+    else:
+        primary = list(memberships.filter(is_primary=True)[:2])
+        if len(primary) == 1:
+            membership = primary[0]
+        else:
+            available = list(memberships[:2])
+            if not available:
+                raise PermissionDenied("Você precisa de um vínculo organizacional vigente para criar processos.")
+            if len(available) > 1:
+                raise DjangoValidationError({"origin_membership": "Selecione um dos seus vínculos organizacionais."})
+            membership = available[0]
+    origin_sector = membership.sector
     decision = evaluate_sector_access(
         user,
         permission="processes.add_administrativeprocess",
@@ -69,7 +86,7 @@ def create_process(*, user, **validated_data):
     )
     if not decision.allowed:
         raise PermissionDenied("Você não pode criar processos neste setor.")
-    process = AdministrativeProcess(created_by=user, **validated_data)
+    process = AdministrativeProcess(created_by=user, origin_sector=origin_sector, **validated_data)
     process.save()
     append_process_event(
         process=process,

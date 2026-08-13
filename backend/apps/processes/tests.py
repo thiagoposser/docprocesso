@@ -7,6 +7,7 @@ from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from datetime import timedelta
 from decimal import Decimal
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -113,7 +114,7 @@ class AdministrativeProcessApiTests(APITestCase):
         self.other = users.objects.create_user(username="process_api_other")
         self.sector = Sector.objects.create(name="API Protocolo", code="API-PROTO")
         self.other_sector = Sector.objects.create(name="API Restrito", code="API-REST")
-        UserSectorMembership.objects.create(user=self.user, sector=self.sector, is_primary=True)
+        self.membership = UserSectorMembership.objects.create(user=self.user, sector=self.sector, is_primary=True)
         UserSectorMembership.objects.create(user=self.other, sector=self.other_sector, is_primary=True)
         self.process_type = ProcessType.objects.create(name="API Administrativo", code="api-administrativo")
         permissions = Permission.objects.filter(
@@ -136,7 +137,7 @@ class AdministrativeProcessApiTests(APITestCase):
     def test_creates_lists_retrieves_and_edits_draft(self):
         created = self.client.post(
             reverse("process-list"),
-            {"title": "Compra", "description": "Material", "process_type": self.process_type.pk, "origin_sector": self.sector.pk},
+            {"title": "Compra", "description": "Material", "process_type": self.process_type.pk},
             format="json",
         )
         self.assertEqual(created.status_code, status.HTTP_201_CREATED)
@@ -195,13 +196,14 @@ class AdministrativeProcessApiTests(APITestCase):
         self.assertEqual(len(response.data["results"]), 20)
         self.assertLessEqual(len(queries), 8)
 
-    def test_rejects_creation_outside_scope_and_protected_patch_fields(self):
+    def test_rejects_forged_origin_and_protected_patch_fields(self):
         denied = self.client.post(
             reverse("process-list"),
             {"title": "Negado", "process_type": self.process_type.pk, "origin_sector": self.other_sector.pk},
             format="json",
         )
-        self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(denied.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("origin_sector", denied.data)
         process = self.create_process()
         response = self.client.patch(
             reverse("process-detail", args=[process.pk]),
@@ -217,6 +219,43 @@ class AdministrativeProcessApiTests(APITestCase):
         )
         self.assertEqual(relocation.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("origin_sector", relocation.data)
+
+    def test_selects_an_authorized_membership_when_multiple_are_available(self):
+        second = Sector.objects.create(name="API Compras", code="API-COMP")
+        second_membership = UserSectorMembership.objects.create(user=self.user, sector=second)
+        created = self.client.post(
+            reverse("process-list"),
+            {"title": "Compra", "process_type": self.process_type.pk, "origin_membership": second_membership.pk},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created.data["origin_sector"], second.pk)
+
+    def test_requires_selection_when_multiple_memberships_have_no_primary(self):
+        self.membership.is_primary = False
+        self.membership.save()
+        UserSectorMembership.objects.create(user=self.user, sector=Sector.objects.create(name="API Compras"))
+        response = self.client.post(
+            reverse("process-list"), {"title": "Ambíguo", "process_type": self.process_type.pk}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("origin_membership", response.data)
+
+    def test_rejects_inactive_or_expired_membership(self):
+        self.membership.active = False
+        self.membership.is_primary = False
+        self.membership.save()
+        expired = UserSectorMembership.objects.create(
+            user=self.user, sector=self.other_sector, starts_on=timezone.localdate() - timedelta(days=2),
+            ends_on=timezone.localdate() - timedelta(days=1),
+        )
+        for membership_id in (self.membership.pk, expired.pk):
+            response = self.client.post(
+                reverse("process-list"),
+                {"title": "Inválido", "process_type": self.process_type.pk, "origin_membership": membership_id},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_requires_permissions_and_membership_for_reading(self):
         unprivileged = get_user_model().objects.create_user(username="process_unprivileged")
