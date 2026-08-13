@@ -2,7 +2,42 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .membership_services import save_membership
-from .models import Sector, UserSectorMembership
+from .models import OrganizationalUnit, Sector, UserSectorMembership
+
+
+class OrganizationalUnitSerializer(serializers.ModelSerializer):
+    parent_name = serializers.CharField(source="parent.name", read_only=True)
+
+    class Meta:
+        model = OrganizationalUnit
+        fields = (
+            "id", "name", "acronym", "description", "parent", "parent_name",
+            "active", "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "parent_name", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        parent = attrs.get("parent") if "parent" in attrs else None
+        parent_changed = "parent" in attrs and (not self.instance or parent != self.instance.parent)
+        if parent_changed and parent and not parent.active:
+            raise serializers.ValidationError({"parent": "Selecione uma unidade superior ativa."})
+
+        active = attrs.get("active", getattr(self.instance, "active", True))
+        if self.instance and not active and self.instance.children.filter(active=True).exists():
+            raise serializers.ValidationError({"active": "Inative primeiro as unidades subordinadas ativas."})
+        return attrs
+
+    def create(self, validated_data):
+        try:
+            return super().create(validated_data)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from error
+
+    def update(self, instance, validated_data):
+        try:
+            return super().update(instance, validated_data)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from error
 
 
 class SectorSerializer(serializers.ModelSerializer):
