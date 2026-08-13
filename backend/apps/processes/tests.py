@@ -217,11 +217,17 @@ class AdministrativeProcessApiTests(APITestCase):
         process = self.create_process()
         response = self.client.patch(
             reverse("process-detail", args=[process.pk]),
-            {"status": ProcessStatus.OPEN, "current_sector": self.other_sector.pk, "version": 2},
+            {
+                "status": ProcessStatus.OPEN, "current_sector": self.other_sector.pk, "version": 2,
+                "responsible_sector": self.other_sector.pk, "responsible_function": 999999,
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("status", response.data)
+        process.refresh_from_db()
+        self.assertIsNone(process.responsible_sector_id)
+        self.assertIsNone(process.responsible_function_id)
         relocation = self.client.patch(
             reverse("process-detail", args=[process.pk]),
             {"origin_sector": self.other_sector.pk},

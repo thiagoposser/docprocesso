@@ -2,8 +2,10 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
+from rest_framework import status
+from rest_framework.test import APITestCase
 
 from apps.processes.models import AdministrativeProcess, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
 from apps.processes.workflow_services import create_workflow
@@ -13,7 +15,7 @@ from .models import Payment, PaymentMethod, PaymentStatus, Supplier
 from .services import InvalidPaymentTransition, confirm_payment, create_payment
 
 
-class PaymentWorkflowIntegrationTests(TestCase):
+class PaymentWorkflowIntegrationTests(APITestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="workflow_finance")
         self.sector = Sector.objects.create(name="Financeiro workflow payment", code="PAY-WF")
@@ -56,6 +58,12 @@ class PaymentWorkflowIntegrationTests(TestCase):
         )
         self.supplier = Supplier.objects.create(name="Fornecedor workflow", tax_id="12345678901")
 
+    def payment_payload(self):
+        return {
+            "process": self.process.pk, "sector": self.sector.pk, "supplier": self.supplier.pk,
+            "description": "Serviço", "amount": "10.00", "due_date": str(timezone.localdate()),
+        }
+
     def test_create_and_confirm_advance_exactly_one_financial_stage_atomically(self):
         payment = create_payment(
             actor=self.user, process=self.process, sector=self.sector, supplier=self.supplier,
@@ -83,3 +91,33 @@ class PaymentWorkflowIntegrationTests(TestCase):
                 description="Inválido", amount=Decimal("10.00"), due_date=timezone.localdate(),
             )
         self.assertFalse(Payment.objects.exists())
+
+    def test_available_action_routes_financial_work_and_generic_transition_cannot_skip_it(self):
+        self.client.force_authenticate(self.user)
+        available = self.client.get(reverse("process-available-actions", args=[self.process.pk]))
+        self.assertEqual(available.status_code, status.HTTP_200_OK)
+        self.assertEqual(available.data[0]["integration_action"], "create_payment")
+        blocked = self.client.post(
+            reverse("process-transitions", args=[self.process.pk]),
+            {"action": "encaminhar-pagamento", "version": 1}, format="json",
+        )
+        self.assertEqual(blocked.status_code, status.HTTP_400_BAD_REQUEST)
+        self.process.refresh_from_db()
+        self.assertEqual((self.process.current_stage, self.process.version), (self.processing, 1))
+        self.assertFalse(Payment.objects.exists())
+
+    def test_financial_permission_without_eligible_function_rolls_back_api_creation(self):
+        wrong_function = OrganizationalFunction.objects.create(name="Função indevida", code="PAY-WF-WRONG")
+        actor = get_user_model().objects.create_user(username="workflow_wrong_function")
+        UserSectorMembership.objects.create(
+            user=actor, sector=self.sector, function=wrong_function, is_primary=True
+        )
+        actor.user_permissions.add(*Permission.objects.filter(codename__in=[
+            "add_payment", "view_financial_data", "view_administrativeprocess",
+        ]))
+        self.client.force_authenticate(actor)
+        response = self.client.post(reverse("payment-list"), self.payment_payload(), format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Payment.objects.exists())
+        self.process.refresh_from_db()
+        self.assertEqual((self.process.current_stage, self.process.version), (self.processing, 1))

@@ -16,15 +16,23 @@ class ProcessTransitionApiTests(APITestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="transition_api")
         self.outsider = get_user_model().objects.create_user(username="transition_outsider")
+        self.other_sector_actor = get_user_model().objects.create_user(username="transition_other_sector")
+        self.unlinked_actor = get_user_model().objects.create_user(username="transition_unlinked")
         self.origin = Sector.objects.create(name="Origem API action", code="ACT-O")
         self.destination = Sector.objects.create(name="Destino API action", code="ACT-D")
         self.target_function = OrganizationalFunction.objects.create(name="Aprovador API action", code="ACT-F")
         UserSectorMembership.objects.create(user=self.user, sector=self.origin, is_primary=True)
         UserSectorMembership.objects.create(user=self.user, sector=self.destination)
         UserSectorMembership.objects.create(user=self.outsider, sector=self.origin, is_primary=True)
+        UserSectorMembership.objects.create(user=self.other_sector_actor, sector=self.destination, is_primary=True)
         permissions = Permission.objects.filter(codename__in=["view_administrativeprocess", "forward_administrativeprocess"])
         self.user.user_permissions.add(*permissions)
         self.outsider.user_permissions.add(Permission.objects.get(codename="view_administrativeprocess"))
+        scoped_permissions = Permission.objects.filter(
+            codename__in=["view_administrativeprocess", "forward_administrativeprocess"]
+        )
+        self.other_sector_actor.user_permissions.add(*scoped_permissions)
+        self.unlinked_actor.user_permissions.add(*scoped_permissions)
         self.workflow = create_workflow(code="transition-api", name="Transition API")
         self.source = WorkflowStage.objects.create(
             workflow_version=self.workflow.current_version, order=1, name="Solicitação", is_initial=True,
@@ -107,6 +115,8 @@ class ProcessTransitionApiTests(APITestCase):
     def test_rejects_illegal_stale_and_terminal_actions(self):
         illegal = self.client.post(self.execute_url, {"action": "inexistente", "version": 1}, format="json")
         self.assertEqual(illegal.status_code, status.HTTP_403_FORBIDDEN)
+        self.process.refresh_from_db()
+        self.assertEqual((self.process.current_stage, self.process.version), (self.source, 1))
         self.transition.requires_note = False
         self.transition.requires_attachment = False
         self.transition.save()
@@ -118,6 +128,21 @@ class ProcessTransitionApiTests(APITestCase):
             status=ProcessStatus.COMPLETED, completed_at=self.process.updated_at
         )
         self.assertEqual(self.client.get(self.available_url).data, [])
+
+    def test_manual_calls_cannot_cross_sector_or_bypass_membership(self):
+        self.transition.requires_note = False
+        self.transition.requires_attachment = False
+        self.transition.save()
+        for actor in (self.outsider, self.other_sector_actor, self.unlinked_actor):
+            with self.subTest(actor=actor.username):
+                self.client.force_authenticate(actor)
+                response = self.client.post(
+                    self.execute_url, {"action": "aprovar", "version": 1}, format="json"
+                )
+                self.assertIn(response.status_code, {status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND})
+                self.process.refresh_from_db()
+                self.assertEqual((self.process.current_stage, self.process.version), (self.source, 1))
+                self.assertFalse(self.process.movements.exists())
 
     def test_legacy_process_has_no_actions(self):
         legacy = AdministrativeProcess.objects.create(
