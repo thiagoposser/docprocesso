@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { adminGuard, auditGuard, authGuard, organizationalFunctionGuard, paymentAddGuard, paymentChangeGuard, paymentViewGuard, processAddGuard, processChangeGuard, processViewGuard, reportsGuard, sectorGuard, unitGuard } from './core/guards/auth.guard';
+import { adminGuard, auditGuard, authGuard, organizationalFunctionGuard, paymentAddGuard, paymentChangeGuard, paymentViewGuard, processAddGuard, processChangeGuard, processViewGuard, reportsGuard, sectorGuard, unitGuard, workflowGuard } from './core/guards/auth.guard';
 import { authResolver } from './core/resolvers/auth.resolver';
 
 export const routes: Routes = [
@@ -47,6 +47,7 @@ export const routes: Routes = [
           { path: 'estrutura/funcoes/nova', title: 'Nova função', canActivate: [organizationalFunctionGuard], data: { breadcrumb: 'Nova função' }, loadComponent: () => import('./features/sectors/pages/function-form/function-form').then(m => m.FunctionForm) },
           { path: 'estrutura/funcoes/:id/editar', title: 'Editar função', canActivate: [organizationalFunctionGuard], data: { breadcrumb: 'Editar função' }, loadComponent: () => import('./features/sectors/pages/function-form/function-form').then(m => m.FunctionForm) },
           { path: 'estrutura/vinculos', title: 'Vínculos organizacionais', canActivate: [adminGuard], data: { breadcrumb: 'Vínculos' }, loadComponent: () => import('./features/administration/users/user-list/user-list').then(m => m.UserList) },
+          { path: 'fluxos', title: 'Fluxos administrativos', canActivate: [workflowGuard], data: { breadcrumb: 'Fluxos' }, loadComponent: () => import('./features/administration/workflows/workflow-admin').then(m => m.WorkflowAdmin) },
           { path: 'auditoria', title: 'Auditoria', canActivate: [auditGuard], data: { breadcrumb: 'Auditoria' }, loadComponent: () => import('./features/administration/audit/pages/audit-list/audit-list').then(m => m.AuditList) },
           { path: 'auditoria/:id', title: 'Detalhes da auditoria', canActivate: [auditGuard], data: { breadcrumb: 'Detalhes da auditoria' }, loadComponent: () => import('./features/administration/audit/pages/audit-detail/audit-detail').then(m => m.AuditDetail) }
         ]

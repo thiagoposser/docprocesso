@@ -20,6 +20,7 @@ import { SettingsService } from '../../features/settings/services/settings.servi
         @if (canViewPayments()) { <a routerLink="/pagamentos" routerLinkActive="active" title="Pagamentos" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="document" /></span><span class="nav-label">Pagamentos</span></a> }
         @if (auth.can('core.generate_reports')) { <a routerLink="/relatorios" routerLinkActive="active" title="Relatórios" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="dashboard" /></span><span class="nav-label">Relatórios</span></a> }
         <a routerLink="/documentos" routerLinkActive="active" title="Documentos" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="document" /></span><span class="nav-label">Documentos</span></a>
+        @if (canManageWorkflows()) { <a routerLink="/administracao/fluxos" routerLinkActive="active" title="Fluxos administrativos" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="settings" /></span><span class="nav-label">Fluxos</span></a> }
         @if (auth.isAdmin() || canViewAudit() || canManageStructure()) {
           <button type="button" class="submenu-toggle" [class.active]="adminOpen()" (click)="adminOpen.update(value => !value)" [attr.aria-expanded]="adminOpen()">
             <span class="nav-icon"><app-icon name="settings" /></span><span class="nav-label">Administração</span><span class="submenu-arrow"><app-icon name="arrow" [size]="14" /></span>
@@ -47,6 +48,7 @@ export class Sidebar {
   readonly canManageSectors = () => Boolean(this.auth.user()?.is_staff || this.auth.user()?.permissions.includes('sectors.manage_sector'));
   readonly canManageUnits = () => Boolean(this.auth.user()?.is_staff || this.auth.user()?.permissions.includes('sectors.manage_organizational_unit'));
   readonly canManageFunctions = () => Boolean(this.auth.user()?.is_staff || this.auth.user()?.permissions.includes('sectors.manage_organizational_function'));
+  readonly canManageWorkflows = () => this.auth.can('processes.view_administrativeworkflow');
   readonly canManageStructure = () => this.canManageSectors() || this.canManageUnits() || this.canManageFunctions();
   readonly canViewPayments = () => this.auth.can('payments.view_payment') && this.auth.can('payments.view_financial_data') && this.auth.can('processes.view_administrativeprocess');
 }
