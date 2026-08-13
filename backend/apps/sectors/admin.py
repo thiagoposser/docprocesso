@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from .models import Sector, UserSectorMembership
+from .models import OrganizationalUnit, Sector, UserSectorMembership
+
+
+@admin.register(OrganizationalUnit)
+class OrganizationalUnitAdmin(admin.ModelAdmin):
+    list_display = ("name", "acronym", "parent", "active", "updated_at")
+    list_filter = ("active", "parent")
+    search_fields = ("name", "acronym", "description")
+    autocomplete_fields = ("parent",)
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(Sector)

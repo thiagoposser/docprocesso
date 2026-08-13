@@ -9,8 +9,103 @@ from rest_framework.test import APITestCase
 from apps.core.models import SystemSettings
 
 from .membership_services import save_membership
-from .models import Sector, UserSectorMembership
+from .models import OrganizationalUnit, Sector, UserSectorMembership
 from .policies import evaluate_sector_access
+
+
+class OrganizationalUnitModelTests(TestCase):
+    def test_supports_hierarchy_normalizes_acronym_and_prevents_cycles(self):
+        root = OrganizationalUnit.objects.create(name="Administração", acronym=" adm ")
+        child = OrganizationalUnit.objects.create(name="Regional", acronym="REG", parent=root)
+
+        self.assertEqual(root.acronym, "ADM")
+        root.parent = child
+        with self.assertRaisesMessage(ValidationError, "hierarquia de unidades"):
+            root.save()
+
+    def test_protects_parent_with_children_from_deletion(self):
+        root = OrganizationalUnit.objects.create(name="Administração", acronym="ADM")
+        OrganizationalUnit.objects.create(name="Regional", acronym="REG", parent=root)
+
+        with self.assertRaises(ProtectedError):
+            root.delete()
+
+
+class OrganizationalUnitApiTests(APITestCase):
+    def setUp(self):
+        users = get_user_model()
+        self.user = users.objects.create_user(username="unit_reader")
+        self.manager = users.objects.create_user(username="unit_manager")
+        self.manager.user_permissions.add(Permission.objects.get(codename="manage_organizational_unit"))
+        self.root = OrganizationalUnit.objects.create(name="Administração", acronym="ADM")
+        self.child = OrganizationalUnit.objects.create(name="Regional", acronym="REG", parent=self.root)
+        self.inactive = OrganizationalUnit.objects.create(name="Histórica", acronym="HIST", active=False)
+
+    def authenticate(self, user):
+        self.client.force_authenticate(user)
+
+    def test_authenticated_reader_only_lists_active_units(self):
+        self.authenticate(self.user)
+
+        response = self.client.get(reverse("organizational-unit-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual({item["acronym"] for item in response.data["results"]}, {"ADM", "REG"})
+        self.assertEqual(
+            self.client.get(reverse("organizational-unit-detail", args=[self.inactive.pk])).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_manager_can_create_update_filter_and_cannot_delete(self):
+        self.authenticate(self.manager)
+
+        created = self.client.post(
+            reverse("organizational-unit-list"),
+            {"name": "Tecnologia", "acronym": "ti", "description": "Unidade de TI", "parent": self.root.pk},
+            format="json",
+        )
+
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created.data["acronym"], "TI")
+        detail = reverse("organizational-unit-detail", args=[created.data["id"]])
+        self.assertEqual(self.client.patch(detail, {"name": "Tecnologia da Informação"}, format="json").status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get(reverse("organizational-unit-list"), {"active": "false"}).data["count"], 1)
+        self.assertEqual(self.client.delete(detail).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def test_rejects_inactive_parent_cycle_and_parent_inactivation(self):
+        self.authenticate(self.manager)
+        inactive_parent = self.client.post(
+            reverse("organizational-unit-list"),
+            {"name": "Inválida", "acronym": "INV", "parent": self.inactive.pk},
+            format="json",
+        )
+        self.assertEqual(inactive_parent.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("parent", inactive_parent.data)
+
+        cycle = self.client.patch(
+            reverse("organizational-unit-detail", args=[self.root.pk]),
+            {"parent": self.child.pk},
+            format="json",
+        )
+        self.assertEqual(cycle.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("parent", cycle.data)
+
+        inactivation = self.client.patch(
+            reverse("organizational-unit-detail", args=[self.root.pk]),
+            {"active": False},
+            format="json",
+        )
+        self.assertEqual(inactivation.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("active", inactivation.data)
+
+    def test_write_requires_permission_and_authentication_is_mandatory(self):
+        self.authenticate(self.user)
+        self.assertEqual(
+            self.client.post(reverse("organizational-unit-list"), {"name": "TI", "acronym": "TI"}).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get(reverse("organizational-unit-list")).status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 class SectorModelTests(TestCase):

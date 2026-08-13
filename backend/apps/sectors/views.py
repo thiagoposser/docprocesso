@@ -5,14 +5,54 @@ from rest_framework.response import Response
 
 from apps.audit.mixins import AuditedWriteMixin
 
-from .models import Sector, UserSectorMembership
-from .permissions import SectorPermission, UserSectorMembershipPermission
-from .serializers import SectorSerializer, UserSectorMembershipSerializer
+from .models import OrganizationalUnit, Sector, UserSectorMembership
+from .permissions import OrganizationalUnitPermission, SectorPermission, UserSectorMembershipPermission
+from .serializers import OrganizationalUnitSerializer, SectorSerializer, UserSectorMembershipSerializer
 from .services import build_sector_tree
 
 
 def can_manage_sectors(user):
     return user.is_staff or user.has_perm("sectors.manage_sector")
+
+
+def can_manage_units(user):
+    return user.is_staff or user.has_perm("sectors.manage_organizational_unit")
+
+
+class OrganizationalUnitViewSet(
+    AuditedWriteMixin,
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = OrganizationalUnitSerializer
+    permission_classes = [OrganizationalUnitPermission]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name", "acronym", "description"]
+    ordering_fields = ["name", "acronym", "active", "created_at", "updated_at"]
+    ordering = ["name", "id"]
+    audit_label = "unidade organizacional"
+    audit_fields = ("name", "acronym", "description", "parent", "active")
+
+    def get_queryset(self):
+        queryset = OrganizationalUnit.objects.select_related("parent")
+        params = self.request.query_params
+        if not can_manage_units(self.request.user):
+            queryset = queryset.filter(active=True)
+        elif params.get("active") in {"true", "false"}:
+            queryset = queryset.filter(active=params["active"] == "true")
+
+        parent = params.get("parent")
+        if parent == "root":
+            queryset = queryset.filter(parent__isnull=True)
+        elif parent:
+            try:
+                queryset = queryset.filter(parent_id=int(parent))
+            except ValueError as error:
+                raise ValidationError({"parent": "Informe um ID de unidade ou 'root'."}) from error
+        return queryset
 
 
 class SectorViewSet(
