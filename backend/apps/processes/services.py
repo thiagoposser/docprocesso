@@ -92,7 +92,8 @@ def create_process(*, user, origin_membership=None, **validated_data):
         raise PermissionDenied("Você não pode criar processos neste setor.")
     process = AdministrativeProcess(
         created_by=user, origin_sector=origin_sector, workflow_version=workflow_version,
-        current_stage=current_stage, **validated_data,
+        current_stage=current_stage, responsible_sector=current_stage.responsible_sector or origin_sector,
+        responsible_function=current_stage.responsible_function, **validated_data,
     )
     process.save()
     append_process_event(

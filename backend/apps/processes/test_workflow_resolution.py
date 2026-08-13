@@ -4,7 +4,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.sectors.models import Sector, UserSectorMembership
+from apps.sectors.models import OrganizationalFunction, Sector, UserSectorMembership
 
 from .models import ProcessType, WorkflowStage
 from .workflow_services import create_workflow
@@ -31,11 +31,16 @@ class ProcessWorkflowResolutionTests(APITestCase):
 
     def test_creation_pins_workflow_version_and_initial_stage(self):
         workflow, stage, process_type = self.configure()
+        function = OrganizationalFunction.objects.create(name="Solicitante resolução", code="RES-F")
+        stage.responsible_function = function
+        stage.save()
         response = self.client.post(reverse("process-list"), {"title": "Com fluxo", "process_type": process_type.pk}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["workflow_version"], workflow.current_version_id)
         self.assertEqual(response.data["current_stage"], stage.pk)
         self.assertEqual(response.data["current_stage_name"], "Inicial")
+        self.assertEqual(response.data["responsible_sector"], self.sector.pk)
+        self.assertEqual(response.data["responsible_function"], function.pk)
 
     def test_rejects_missing_ambiguous_inactive_and_ineligible_workflow(self):
         no_flow = ProcessType.objects.create(name="Sem fluxo", code="sem-fluxo")

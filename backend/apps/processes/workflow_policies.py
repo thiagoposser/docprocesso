@@ -15,7 +15,8 @@ class TransitionAuthorizationDecision:
 
 
 def evaluate_transition_authorization(
-    user, *, transition, current_stage, process_status, permission, note="", has_attachment=False
+    user, *, transition, current_stage, process_status, permission, note="", has_attachment=False,
+    responsible_sector_id=None, responsible_function_id=None,
 ):
     if not getattr(user, "is_authenticated", False):
         return TransitionAuthorizationDecision(False, "authentication_required")
@@ -40,8 +41,8 @@ def evaluate_transition_authorization(
     if transition.authorized_function_id:
         memberships = memberships.filter(function_id=transition.authorized_function_id)
     if not transition.authorized_sector_id and not transition.authorized_function_id:
-        source = current_stage.responsible_sector_id
-        function = current_stage.responsible_function_id
+        source = responsible_sector_id or current_stage.responsible_sector_id
+        function = responsible_function_id if responsible_function_id is not None else current_stage.responsible_function_id
         if source:
             memberships = memberships.filter(sector_id=source)
         if function:
