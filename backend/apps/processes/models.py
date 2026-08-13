@@ -376,6 +376,7 @@ class ProcessMovement(models.Model):
     note = models.TextField(blank=True)
     status_before = models.CharField(max_length=20, choices=ProcessStatus.choices)
     status_after = models.CharField(max_length=20, choices=ProcessStatus.choices)
+    context_snapshot = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = ProcessMovementQuerySet.as_manager()
