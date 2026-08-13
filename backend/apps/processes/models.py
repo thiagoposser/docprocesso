@@ -40,6 +40,7 @@ class ProcessEventType(models.TextChoices):
     CORRECTION = "CORRECTION", "Correção de histórico"
     NOTE = "NOTE", "Observação funcional"
     SYSTEM = "SYSTEM", "Evento de sistema"
+    ASSIGNMENT_CHANGED = "ASSIGNMENT_CHANGED", "Responsável alterado"
 
 
 class ProcessType(models.Model):
@@ -259,6 +260,7 @@ class AdministrativeProcess(models.Model):
             ("reopen_administrativeprocess", "Pode reabrir processos"),
             ("cancel_administrativeprocess", "Pode cancelar processos"),
             ("archive_administrativeprocess", "Pode arquivar processos"),
+            ("assign_administrativeprocess", "Pode atribuir responsáveis aos processos"),
         ]
         constraints = [
             models.CheckConstraint(condition=models.Q(version__gte=1), name="process_version_gte_1"),
@@ -283,6 +285,7 @@ class AdministrativeProcess(models.Model):
             errors["workflow_version"] = "Versão e etapa de fluxo devem ser informadas em conjunto."
         if self.current_stage_id and not self.responsible_sector_id:
             self.responsible_sector = self.current_stage.responsible_sector or self.origin_sector
+            self.responsible_function = self.current_stage.responsible_function
         if self.current_stage_id and not self.responsible_sector_id:
             errors["responsible_sector"] = "Processo com fluxo deve possuir setor responsável."
         if self.status != ProcessStatus.DRAFT and self.current_sector_id is None:

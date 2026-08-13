@@ -1,5 +1,7 @@
+from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError as DjangoValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.sectors.policies import evaluate_sector_access
@@ -124,6 +126,63 @@ def _validate_version(process, expected_version):
         raise ProcessConflictError(
             f"Versão desatualizada. Esperada {process.version}, recebida {expected_version}."
         )
+
+
+def eligible_assignees(*, process, search=""):
+    if not process.responsible_sector_id:
+        return get_user_model().objects.none()
+    memberships = UserSectorMembership.objects.effective().filter(sector_id=process.responsible_sector_id)
+    if process.responsible_function_id:
+        memberships = memberships.filter(function_id=process.responsible_function_id)
+    users = get_user_model().objects.filter(is_active=True, sector_memberships__in=memberships).filter(
+        Q(is_superuser=True)
+        | Q(user_permissions__content_type__app_label="processes", user_permissions__codename="view_administrativeprocess")
+        | Q(groups__permissions__content_type__app_label="processes", groups__permissions__codename="view_administrativeprocess")
+    )
+    if search.strip():
+        term = search.strip()
+        users = users.filter(
+            Q(username__icontains=term) | Q(first_name__icontains=term) | Q(last_name__icontains=term)
+        )
+    return users.distinct().order_by("first_name", "last_name", "username", "id")
+
+
+@transaction.atomic
+def assign_process(*, process_id, actor, assignee_id, expected_version):
+    process = AdministrativeProcess.objects.select_for_update(of=("self",)).select_related(
+        "responsible_sector", "responsible_function", "current_stage", "assignee"
+    ).get(pk=process_id)
+    _validate_version(process, expected_version)
+    decision = evaluate_sector_access(
+        actor, permission="processes.assign_administrativeprocess", sector=process.responsible_sector
+    )
+    if not decision.allowed:
+        raise ProcessAccessDenied(f"Atribuição não permitida: {decision.reason}.")
+    assignee = eligible_assignees(process=process).filter(pk=assignee_id).first()
+    if assignee is None:
+        raise ProcessAccessDenied("O usuário não é elegível para a responsabilidade atual.")
+    previous = process.assignee
+    process.assignee = assignee
+    process.version += 1
+    process.save(update_fields=["assignee", "version", "updated_at"])
+    append_process_event(
+        process=process, event_type=ProcessEventType.ASSIGNMENT_CHANGED,
+        title="Responsável individual alterado", actor=actor,
+        payload={
+            "previous_assignee_id": previous.pk if previous else None,
+            "assignee_id": assignee.pk,
+            "stage_id": process.current_stage_id,
+            "responsible_sector_id": process.responsible_sector_id,
+            "responsible_function_id": process.responsible_function_id,
+        },
+    )
+    record_audit(
+        action=AuditAction.PROCESS_WORKFLOW, description="Responsável individual do processo alterado",
+        user=actor, entity=process,
+        old_values={"assignee_id": previous.pk if previous else None, "version": expected_version},
+        new_values={"assignee_id": assignee.pk, "version": process.version},
+    )
+    return process
 
 
 def _validate_transition(process, action):

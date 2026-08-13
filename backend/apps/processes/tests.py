@@ -104,6 +104,7 @@ class AdministrativeProcessModelTests(TestCase):
                 "reopen_administrativeprocess",
                 "cancel_administrativeprocess",
                 "archive_administrativeprocess",
+                "assign_administrativeprocess",
             },
         )
 

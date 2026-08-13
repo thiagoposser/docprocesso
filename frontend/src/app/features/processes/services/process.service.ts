@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 
-import { ExecuteTransitionPayload, ProcessAttachment, ProcessDocument, ProcessDocumentPage, ProcessItem, ProcessPage, ProcessPayload, ProcessQuery, ProcessTimelinePage, ProcessType, WorkflowAction } from '../models/process.models';
+import { EligibleAssignee, ExecuteTransitionPayload, ProcessAttachment, ProcessDocument, ProcessDocumentPage, ProcessItem, ProcessPage, ProcessPayload, ProcessQuery, ProcessTimelinePage, ProcessType, WorkflowAction } from '../models/process.models';
 
 @Injectable({ providedIn: 'root' })
 export class ProcessService {
@@ -32,6 +32,8 @@ export class ProcessService {
   update(id: number, payload: Partial<ProcessPayload>) { return this.http.patch<ProcessItem>(`/api/processes/${id}/`, payload); }
   availableActions(id: number) { return this.http.get<WorkflowAction[]>(`/api/processes/${id}/available-actions/`); }
   executeTransition(id: number, payload: ExecuteTransitionPayload) { return this.http.post<ProcessItem>(`/api/processes/${id}/transitions/`, payload); }
+  eligibleAssignees(id: number, search = '') { return this.http.get<EligibleAssignee[]>(`/api/processes/${id}/eligible-assignees/`, { params: { search } }); }
+  assign(id: number, assignee: number, version: number) { return this.http.post<ProcessItem>(`/api/processes/${id}/assign/`, { assignee, version }); }
   timeline(id: number, page = 1) { return this.http.get<ProcessTimelinePage>(`/api/processes/${id}/timeline/`, { params: { page } }); }
   documents(id: number) { return this.http.get<ProcessDocumentPage>(`/api/processes/${id}/documents/`); }
   createDocument(id: number, payload: { title: string; description: string; category: number }) { return this.http.post<ProcessDocument>(`/api/processes/${id}/documents/`, payload); }
