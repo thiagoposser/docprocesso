@@ -328,11 +328,23 @@ class ProcessViewSet(
             raise ValidationError({"page": "Informe uma página inteira válida."}) from error
         page_size = 20
         horizon = page_number * page_size
-        movements_queryset = process.movements.select_related("actor", "from_sector", "to_sector").chronological()
+        movements_queryset = process.movements.select_related(
+            "actor", "from_sector", "to_sector", "workflow_version", "transition", "from_stage", "to_stage",
+            "from_responsible_sector", "to_responsible_sector", "from_responsible_function",
+            "to_responsible_function", "from_assignee", "to_assignee",
+        ).chronological()
         events_queryset = process.events.select_related("actor").chronological()
         total = movements_queryset.count() + events_queryset.count()
         movements = movements_queryset[:horizon]
         events = events_queryset[:horizon]
+        def responsibility_label(sector, function, assignee):
+            parts = [item for item in (
+                sector.name if sector else None,
+                function.name if function else None,
+                assignee.full_name if assignee else None,
+            ) if item]
+            return " · ".join(parts) or None
+
         entries = [
             {
                 "kind": "movement", "id": f"movement-{item.pk}", "action": item.action,
@@ -340,6 +352,20 @@ class ProcessViewSet(
                 "title": item.get_action_display(), "actor": item.actor_id, "actor_name": item.actor.full_name,
                 "from_sector": item.from_sector_id, "from_sector_name": item.from_sector.name if item.from_sector else None,
                 "to_sector": item.to_sector_id, "to_sector_name": item.to_sector.name if item.to_sector else None,
+                "workflow_version": item.workflow_version_id,
+                "workflow_version_number": item.workflow_version.version if item.workflow_version else None,
+                "transition": item.transition_id,
+                "transition_code": item.transition.code if item.transition else None,
+                "from_stage": item.from_stage_id,
+                "from_stage_name": item.from_stage.name if item.from_stage else None,
+                "to_stage": item.to_stage_id,
+                "to_stage_name": item.to_stage.name if item.to_stage else None,
+                "from_responsibility": responsibility_label(
+                    item.from_responsible_sector, item.from_responsible_function, item.from_assignee
+                ),
+                "to_responsibility": responsibility_label(
+                    item.to_responsible_sector, item.to_responsible_function, item.to_assignee
+                ),
                 "note": item.note, "payload": {}, "status_before": item.status_before,
                 "status_before_label": item.get_status_before_display(), "status_after": item.status_after,
                 "status_after_label": item.get_status_after_display(), "created_at": item.created_at,
@@ -351,6 +377,10 @@ class ProcessViewSet(
                 "event_type": item.event_type, "event_type_label": item.get_event_type_display(),
                 "title": item.title, "actor": item.actor_id, "actor_name": item.actor.full_name if item.actor else None,
                 "from_sector": None, "from_sector_name": None, "to_sector": None, "to_sector_name": None,
+                "workflow_version": None, "workflow_version_number": None, "transition": None,
+                "transition_code": None, "from_stage": None, "from_stage_name": None,
+                "to_stage": None, "to_stage_name": None, "from_responsibility": None,
+                "to_responsibility": None,
                 "note": item.description, "payload": item.payload, "status_before": None,
                 "status_before_label": None, "status_after": None, "status_after_label": None,
                 "created_at": item.created_at,

@@ -38,6 +38,11 @@ export interface ProcessMovement {
   event_type: string | null; event_type_label: string | null; title: string;
   from_sector: number | null; from_sector_name: string | null;
   to_sector: number | null; to_sector_name: string | null;
+  workflow_version: number | null; workflow_version_number: number | null;
+  transition: number | null; transition_code: string | null;
+  from_stage: number | null; from_stage_name: string | null;
+  to_stage: number | null; to_stage_name: string | null;
+  from_responsibility: string | null; to_responsibility: string | null;
   actor: number | null; actor_name: string | null; note: string; payload: Record<string, unknown>;
   status_before: ProcessStatus | null; status_before_label: string | null;
   status_after: ProcessStatus | null; status_after_label: string | null; created_at: string;

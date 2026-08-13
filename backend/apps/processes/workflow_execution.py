@@ -72,10 +72,6 @@ def execute_semantic_movement(
     service = return_process if transition.is_return else forward_process
     updated = service(
         process_id=process.pk, actor=user, destination=destination,
-        expected_version=expected_process_version, note=note,
+        expected_version=expected_process_version, note=note, workflow_transition=transition,
     )
-    updated.current_stage = transition.destination_stage
-    updated.responsible_sector = destination
-    updated.responsible_function = transition.destination_stage.responsible_function
-    updated.save(update_fields=["current_stage", "responsible_sector", "responsible_function", "updated_at"])
     return updated

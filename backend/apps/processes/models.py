@@ -320,6 +320,18 @@ class ProcessMovementQuerySet(models.QuerySet):
 
 class ProcessMovement(models.Model):
     process = models.ForeignKey(AdministrativeProcess, on_delete=models.PROTECT, related_name="movements")
+    workflow_version = models.ForeignKey(
+        WorkflowVersion, on_delete=models.PROTECT, related_name="process_movements", blank=True, null=True
+    )
+    transition = models.ForeignKey(
+        WorkflowTransition, on_delete=models.PROTECT, related_name="process_movements", blank=True, null=True
+    )
+    from_stage = models.ForeignKey(
+        WorkflowStage, on_delete=models.PROTECT, related_name="outgoing_process_movements", blank=True, null=True
+    )
+    to_stage = models.ForeignKey(
+        WorkflowStage, on_delete=models.PROTECT, related_name="incoming_process_movements", blank=True, null=True
+    )
     action = models.CharField(max_length=20, choices=ProcessMovementAction.choices)
     from_sector = models.ForeignKey(
         Sector,
@@ -336,6 +348,28 @@ class ProcessMovement(models.Model):
         null=True,
     )
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="process_movements")
+    from_responsible_sector = models.ForeignKey(
+        Sector, on_delete=models.PROTECT, related_name="outgoing_responsibility_movements", blank=True, null=True
+    )
+    to_responsible_sector = models.ForeignKey(
+        Sector, on_delete=models.PROTECT, related_name="incoming_responsibility_movements", blank=True, null=True
+    )
+    from_responsible_function = models.ForeignKey(
+        "sectors.OrganizationalFunction", on_delete=models.PROTECT,
+        related_name="outgoing_responsibility_movements", blank=True, null=True,
+    )
+    to_responsible_function = models.ForeignKey(
+        "sectors.OrganizationalFunction", on_delete=models.PROTECT,
+        related_name="incoming_responsibility_movements", blank=True, null=True,
+    )
+    from_assignee = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="outgoing_assignment_movements", blank=True, null=True,
+    )
+    to_assignee = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="incoming_assignment_movements", blank=True, null=True,
+    )
     note = models.TextField(blank=True)
     status_before = models.CharField(max_length=20, choices=ProcessStatus.choices)
     status_after = models.CharField(max_length=20, choices=ProcessStatus.choices)
