@@ -30,7 +30,7 @@ export interface ProcessQuery {
 
 export type ProcessPage = PaginatedResponse<ProcessItem>;
 
-export interface WorkflowAction { action: string; label: string; destination_stage: number; destination_stage_name: string; requires_note: boolean; requires_attachment: boolean; required_document_role: string; is_return: boolean; }
+export interface WorkflowAction { action: string; label: string; destination_stage: number; destination_stage_name: string; requires_note: boolean; requires_attachment: boolean; required_document_role: string; integration_action: string; is_return: boolean; }
 export interface ExecuteTransitionPayload { action: string; version: number; note?: string; }
 export interface EligibleAssignee { id: number; username: string; name: string; }
 

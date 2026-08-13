@@ -293,7 +293,16 @@ class ProcessViewSet(
             return Response([])
         actions = []
         for transition in process.current_stage.outgoing_transitions.filter(active=True).select_related("destination_stage"):
-            permission = (
+            integration_action = {
+                "encaminhar-pagamento": "create_payment",
+                "confirmar-pagamento": "confirm_payment",
+                "anexar-comprovante": "attach_receipt",
+            }.get(transition.code, "")
+            permission = {
+                "create_payment": "payments.add_payment",
+                "confirm_payment": "payments.confirm_payment",
+                "attach_receipt": "payments.manage_payment_receipt",
+            }.get(integration_action) or (
                 "processes.return_administrativeprocess"
                 if transition.is_return else "processes.forward_administrativeprocess"
             )
@@ -314,6 +323,7 @@ class ProcessViewSet(
                     "requires_note": transition.requires_note,
                     "requires_attachment": transition.requires_attachment,
                     "required_document_role": transition.required_document_role,
+                    "integration_action": integration_action,
                     "is_return": transition.is_return,
                 })
         return Response(AvailableWorkflowActionSerializer(actions, many=True).data)
@@ -330,6 +340,8 @@ class ProcessViewSet(
         ).first()
         if transition is None:
             raise PermissionDenied("Ação não disponível para a etapa atual.")
+        if transition.code in {"encaminhar-pagamento", "confirmar-pagamento", "anexar-comprovante"}:
+            raise ValidationError({"detail": "Esta ação deve ser executada pelo módulo financeiro."})
         has_attachment = process.documents.filter(active=True).filter(
             Q(file__gt="") | Q(external_url__gt="") | Q(attachments__active=True)
         ).exists()
@@ -456,12 +468,9 @@ class ProcessViewSet(
         if request.method == "GET":
             if not request.user.has_perm("documents.view_document"):
                 self.permission_denied(request)
-            queryset = process.documents.all()
-            can_view_receipts = all(request.user.has_perm(permission) for permission in (
-                "payments.view_payment", "payments.view_financial_data", "payments.view_paymentreceipt",
-            ))
-            if not can_view_receipts:
-                queryset = queryset.exclude(role=DocumentRole.PAYMENT_RECEIPT)
+            # Comprovantes permanecem no endpoint financeiro dedicado, inclusive para
+            # usuários autorizados, para não expor dados financeiros na lista geral.
+            queryset = process.documents.exclude(role=DocumentRole.PAYMENT_RECEIPT)
             queryset = queryset.select_related("category", "created_by").prefetch_related("attachments")
             page = self.paginate_queryset(queryset)
             serializer = self.get_serializer(page if page is not None else queryset, many=True)

@@ -236,6 +236,7 @@ class AvailableWorkflowActionSerializer(serializers.Serializer):
     requires_note = serializers.BooleanField(read_only=True)
     requires_attachment = serializers.BooleanField(read_only=True)
     required_document_role = serializers.CharField(read_only=True, allow_blank=True)
+    integration_action = serializers.CharField(read_only=True, allow_blank=True)
     is_return = serializers.BooleanField(read_only=True)
 
 
