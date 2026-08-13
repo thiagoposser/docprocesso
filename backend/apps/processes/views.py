@@ -15,12 +15,10 @@ from .filters import OperationalProcessSearchFilter
 from .permissions import ProcessPermission, ProcessTypePermission, WorkflowPermission, WorkflowStagePermission, WorkflowTransitionPermission
 from .serializers import (
     ProcessActionSerializer,
-    ProcessDestinationActionSerializer,
     ProcessDetailSerializer,
     ProcessListSerializer,
     ProcessTimelineEntrySerializer,
     ProcessRequiredNoteActionSerializer,
-    ProcessReturnActionSerializer,
     ProcessTypeSerializer,
     AdministrativeWorkflowSerializer,
     WorkflowStageSerializer,
@@ -35,11 +33,9 @@ from .services import (
     archive_process,
     cancel_process,
     complete_process,
-    forward_process,
     open_process,
     receive_process,
     reopen_process,
-    return_process,
 )
 
 
@@ -61,10 +57,6 @@ class ProcessViewSet(
             return ProcessListSerializer
         if self.action in {"create", "partial_update", "update"}:
             return ProcessWriteSerializer
-        if self.action in {"forward"}:
-            return ProcessDestinationActionSerializer
-        if self.action in {"return_action"}:
-            return ProcessReturnActionSerializer
         if self.action in {"reopen", "cancel"}:
             return ProcessRequiredNoteActionSerializer
         if self.action in {"open", "receive", "complete", "archive"}:
@@ -166,7 +158,8 @@ class ProcessViewSet(
 
     @action(detail=True, methods=["post"])
     def forward(self, request, pk=None):
-        return self._execute_action(request, forward_process, destination=True)
+        self.get_object()
+        raise ValidationError({"detail": "Encaminhamento por destino foi desativado. Use uma ação de fluxo autorizada."})
 
     @action(detail=True, methods=["post"])
     def receive(self, request, pk=None):
@@ -174,7 +167,8 @@ class ProcessViewSet(
 
     @action(detail=True, methods=["post"], url_path="return", url_name="return")
     def return_action(self, request, pk=None):
-        return self._execute_action(request, return_process, destination=True)
+        self.get_object()
+        raise ValidationError({"detail": "Devolução por destino foi desativada. Use uma ação de fluxo autorizada."})
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):

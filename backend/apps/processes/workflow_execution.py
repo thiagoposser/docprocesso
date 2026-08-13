@@ -1,6 +1,7 @@
 from django.db import transaction
 
-from .models import WorkflowStage, WorkflowTransition
+from .models import AdministrativeProcess, WorkflowStage, WorkflowTransition
+from .services import forward_process, return_process
 from .workflow_policies import evaluate_transition_authorization
 
 
@@ -11,6 +12,10 @@ class TransitionDenied(Exception):
 
 
 class TransitionVersionConflict(Exception):
+    pass
+
+
+class UnresolvedTransitionSector(Exception):
     pass
 
 
@@ -34,3 +39,35 @@ def authorize_transition_execution(
     if not decision.allowed:
         raise TransitionDenied(decision.reason)
     return transition
+
+
+@transaction.atomic
+def execute_semantic_movement(
+    *, user, process_id, transition_id, current_stage_id, expected_process_version,
+    expected_workflow_version_id, note="", has_attachment=False,
+):
+    process = AdministrativeProcess.objects.select_for_update(of=("self",)).select_related("current_sector", "origin_sector").get(
+        pk=process_id
+    )
+    current_stage = WorkflowStage.objects.select_related("responsible_sector").get(pk=current_stage_id)
+    process_sector_id = process.current_sector_id or process.origin_sector_id
+    if not current_stage.responsible_sector_id or current_stage.responsible_sector_id != process_sector_id:
+        raise TransitionDenied("stage_does_not_match_process_sector")
+    permission = (
+        "processes.return_administrativeprocess"
+        if WorkflowTransition.objects.only("is_return").get(pk=transition_id).is_return
+        else "processes.forward_administrativeprocess"
+    )
+    transition = authorize_transition_execution(
+        user=user, transition_id=transition_id, current_stage_id=current_stage_id,
+        expected_workflow_version_id=expected_workflow_version_id, process_status=process.status,
+        permission=permission, note=note, has_attachment=has_attachment,
+    )
+    destination = transition.destination_stage.responsible_sector
+    if destination is None:
+        raise UnresolvedTransitionSector("A etapa de destino não possui setor responsável.")
+    service = return_process if transition.is_return else forward_process
+    return service(
+        process_id=process.pk, actor=user, destination=destination,
+        expected_version=expected_process_version, note=note,
+    )
