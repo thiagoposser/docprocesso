@@ -45,3 +45,11 @@ class ProcessPermission(BasePermission):
 class ProcessTypePermission(BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.has_perm("processes.view_administrativeprocess")
+
+
+class WorkflowPermission(BasePermission):
+    permissions = {"list": "processes.view_administrativeworkflow", "retrieve": "processes.view_administrativeworkflow", "create": "processes.add_administrativeworkflow", "partial_update": "processes.change_administrativeworkflow", "update": "processes.change_administrativeworkflow"}
+
+    def has_permission(self, request, view):
+        permission = self.permissions.get(view.action)
+        return bool(request.user.is_authenticated and permission and request.user.has_perm(permission))
