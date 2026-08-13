@@ -5,14 +5,20 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import AdministrativeWorkflow, WorkflowVersion
+from apps.sectors.models import OrganizationalFunction, Sector
+
+from .models import AdministrativeWorkflow, WorkflowStage, WorkflowVersion
+from .workflow_services import create_workflow, update_workflow
 
 
 class AdministrativeWorkflowApiTests(APITestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="workflow_admin")
         self.user.user_permissions.add(*Permission.objects.filter(
-            codename__in=["view_administrativeworkflow", "add_administrativeworkflow", "change_administrativeworkflow"]
+            codename__in=[
+                "view_administrativeworkflow", "add_administrativeworkflow", "change_administrativeworkflow",
+                "view_workflowstage", "add_workflowstage", "change_workflowstage",
+            ]
         ))
         self.client.force_authenticate(self.user)
 
@@ -52,3 +58,66 @@ class AdministrativeWorkflowApiTests(APITestCase):
         changed = self.client.patch(detail, {"code": "outro"}, format="json")
         self.assertEqual(changed.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn(self.client.delete(detail).status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_405_METHOD_NOT_ALLOWED))
+
+
+class WorkflowStageApiTests(APITestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="stage_admin")
+        self.user.user_permissions.add(*Permission.objects.filter(
+            codename__in=["view_workflowstage", "add_workflowstage", "change_workflowstage"]
+        ))
+        self.client.force_authenticate(self.user)
+        self.workflow = create_workflow(code="compras-stage", name="Compras")
+        self.sector = Sector.objects.create(name="Compras", code="COMP-STAGE")
+        self.function = OrganizationalFunction.objects.create(name="Aprovador", code="APROV-STAGE")
+
+    def payload(self, **changes):
+        data = {
+            "workflow_version": self.workflow.current_version_id, "order": 1, "name": "Solicitação",
+            "is_initial": True, "is_final": False, "responsible_sector": self.sector.pk,
+            "responsible_function": self.function.pk, "requires_manager": False,
+        }
+        data.update(changes)
+        return data
+
+    def test_creates_and_lists_ordered_stages(self):
+        first = self.client.post(reverse("workflow-stage-list"), self.payload(), format="json")
+        second = self.client.post(reverse("workflow-stage-list"), self.payload(
+            order=2, name="Finalização", is_initial=False, is_final=True
+        ), format="json")
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        listed = self.client.get(reverse("workflow-stage-list"), {"workflow": self.workflow.pk})
+        self.assertEqual([item["name"] for item in listed.data["results"]], ["Solicitação", "Finalização"])
+
+    def test_rejects_duplicate_order_and_initial_stage(self):
+        self.client.post(reverse("workflow-stage-list"), self.payload(), format="json")
+        for changes in ({"name": "Mesma ordem", "is_initial": False}, {"order": 2, "name": "Outra inicial"}):
+            response = self.client.post(reverse("workflow-stage-list"), self.payload(**changes), format="json")
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_rejects_missing_or_inactive_responsibility(self):
+        missing = self.client.post(reverse("workflow-stage-list"), self.payload(
+            responsible_sector=None, responsible_function=None
+        ), format="json")
+        self.assertEqual(missing.status_code, status.HTTP_400_BAD_REQUEST)
+        self.sector.active = False
+        self.sector.save()
+        inactive = self.client.post(reverse("workflow-stage-list"), self.payload(responsible_function=None), format="json")
+        self.assertEqual(inactive.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_new_version_clones_stages_and_historical_stage_is_read_only(self):
+        created = self.client.post(reverse("workflow-stage-list"), self.payload(), format="json")
+        old_version = self.workflow.current_version
+        update_workflow(workflow=self.workflow, description="Revisado")
+        self.workflow.refresh_from_db()
+        self.assertEqual(self.workflow.current_version.stages.count(), 1)
+        self.assertEqual(old_version.stages.count(), 1)
+        changed = self.client.patch(
+            reverse("workflow-stage-detail", args=[created.data["id"]]), {"name": "Alterada"}, format="json"
+        )
+        self.assertEqual(changed.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_requires_stage_permissions(self):
+        self.user.user_permissions.clear()
+        self.assertEqual(self.client.get(reverse("workflow-stage-list")).status_code, status.HTTP_403_FORBIDDEN)

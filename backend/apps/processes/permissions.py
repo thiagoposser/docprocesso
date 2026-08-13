@@ -53,3 +53,11 @@ class WorkflowPermission(BasePermission):
     def has_permission(self, request, view):
         permission = self.permissions.get(view.action)
         return bool(request.user.is_authenticated and permission and request.user.has_perm(permission))
+
+
+class WorkflowStagePermission(BasePermission):
+    permissions = {"list": "processes.view_workflowstage", "retrieve": "processes.view_workflowstage", "create": "processes.add_workflowstage", "partial_update": "processes.change_workflowstage", "update": "processes.change_workflowstage"}
+
+    def has_permission(self, request, view):
+        permission = self.permissions.get(view.action)
+        return bool(request.user.is_authenticated and permission and request.user.has_perm(permission))
