@@ -15,6 +15,7 @@ export interface ProcessItem {
   current_stage: number | null; current_stage_name: string | null;
   responsible_sector: number | null; responsible_sector_name: string | null;
   responsible_function: number | null; responsible_function_name: string | null;
+  organizational_unit_name: string | null; last_movement_at: string | null; last_movement_action: string | null; last_movement_action_label: string | null;
   opened_at: string | null; completed_at: string | null; archived_at: string | null;
   created_at?: string; updated_at: string;
 }
@@ -24,7 +25,8 @@ export interface ProcessPayload {
 }
 
 export interface ProcessQuery {
-  search?: string; number?: string; type?: string; status?: string; sector?: string; assignee?: string;
+  search?: string; number?: string; type?: string; status?: string; sector?: string; unit?: string; stage?: string;
+  responsibleSector?: string; responsibleFunction?: string; assignee?: string;
   createdFrom?: string; createdTo?: string; ordering?: string; page?: number;
 }
 

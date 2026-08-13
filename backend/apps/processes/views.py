@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import OuterRef, Q, Subquery
 from django.utils.dateparse import parse_date
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from rest_framework import filters, mixins, status, viewsets
@@ -10,7 +10,7 @@ from apps.documents.models import DocumentRole
 from apps.documents.serializers import ProcessDocumentSerializer
 from apps.documents.services import create_process_document
 
-from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
+from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessMovement, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
 from .filters import OperationalProcessSearchFilter
 from .permissions import ProcessPermission, ProcessTypePermission, WorkflowPermission, WorkflowStagePermission, WorkflowTransitionPermission
 from .serializers import (
@@ -59,7 +59,7 @@ class ProcessViewSet(
     permission_classes = [ProcessPermission]
     http_method_names = ["get", "post", "patch", "head", "options"]
     filter_backends = [OperationalProcessSearchFilter, filters.OrderingFilter]
-    ordering_fields = ["number", "title", "status", "opened_at", "completed_at", "created_at", "updated_at"]
+    ordering_fields = ["number", "title", "status", "opened_at", "completed_at", "created_at", "updated_at", "last_movement_at"]
     ordering = ["-updated_at", "id"]
 
     def get_serializer_class(self):
@@ -86,6 +86,16 @@ class ProcessViewSet(
             "process_type", "created_by", "origin_sector", "current_sector", "assignee",
             "workflow_version", "current_stage",
             "responsible_sector", "responsible_function",
+            "origin_sector__unit", "current_sector__unit", "responsible_sector__unit",
+        ).annotate(
+            last_movement_at=Subquery(
+                ProcessMovement.objects.filter(process_id=OuterRef("pk"))
+                .order_by("-created_at", "-id").values("created_at")[:1]
+            ),
+            last_movement_action=Subquery(
+                ProcessMovement.objects.filter(process_id=OuterRef("pk"))
+                .order_by("-created_at", "-id").values("action")[:1]
+            ),
         )
         user = self.request.user
         if not user.is_superuser:
@@ -96,13 +106,27 @@ class ProcessViewSet(
             )
 
         params = self.request.query_params
-        integer_filters = {"type": "process_type_id", "assignee": "assignee_id"}
+        integer_filters = {
+            "type": "process_type_id", "assignee": "assignee_id",
+            "stage": "current_stage_id", "responsible_sector": "responsible_sector_id",
+            "responsible_function": "responsible_function_id",
+        }
         for parameter, field in integer_filters.items():
             if params.get(parameter):
                 try:
                     queryset = queryset.filter(**{field: int(params[parameter])})
                 except ValueError as error:
                     raise ValidationError({parameter: "Informe um ID inteiro válido."}) from error
+        if params.get("unit"):
+            try:
+                unit_id = int(params["unit"])
+            except ValueError as error:
+                raise ValidationError({"unit": "Informe um ID inteiro válido."}) from error
+            queryset = queryset.filter(
+                Q(responsible_sector__unit_id=unit_id)
+                | Q(responsible_sector__isnull=True, current_sector__unit_id=unit_id)
+                | Q(responsible_sector__isnull=True, current_sector__isnull=True, origin_sector__unit_id=unit_id)
+            )
         if params.get("sector"):
             try:
                 sector_id = int(params["sector"])
