@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import OrganizationalUnit, Sector, UserSectorMembership
+from .models import OrganizationalFunction, OrganizationalUnit, Sector, UserSectorMembership
+
+
+@admin.register(OrganizationalFunction)
+class OrganizationalFunctionAdmin(admin.ModelAdmin):
+    list_display = ("name", "code", "active", "updated_at")
+    list_filter = ("active",)
+    search_fields = ("name", "code", "description")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(OrganizationalUnit)

@@ -56,6 +56,33 @@ class OrganizationalUnit(models.Model):
         return f"{self.acronym} - {self.name}"
 
 
+class OrganizationalFunction(models.Model):
+    name = models.CharField(max_length=150, db_index=True)
+    code = models.CharField(max_length=30, unique=True)
+    description = models.TextField(blank=True)
+    active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        default_permissions = ("add", "change", "view")
+        permissions = [("manage_organizational_function", "Pode gerenciar funções organizacionais")]
+        verbose_name = "função organizacional"
+        verbose_name_plural = "funções organizacionais"
+
+    def clean(self):
+        super().clean()
+        self.code = self.code.strip().upper()
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
 class Sector(models.Model):
     unit = models.ForeignKey(
         OrganizationalUnit,
