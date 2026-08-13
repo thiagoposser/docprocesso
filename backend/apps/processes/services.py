@@ -15,6 +15,7 @@ from .models import (
     ProcessStatus,
     ProcessEventType,
 )
+from .workflow_resolver import resolve_process_workflow
 
 
 class ProcessDomainError(Exception):
@@ -79,6 +80,9 @@ def create_process(*, user, origin_membership=None, **validated_data):
                 raise DjangoValidationError({"origin_membership": "Selecione um dos seus vínculos organizacionais."})
             membership = available[0]
     origin_sector = membership.sector
+    workflow_version, current_stage = resolve_process_workflow(
+        process_type=validated_data["process_type"], origin_sector=origin_sector
+    )
     decision = evaluate_sector_access(
         user,
         permission="processes.add_administrativeprocess",
@@ -86,7 +90,10 @@ def create_process(*, user, origin_membership=None, **validated_data):
     )
     if not decision.allowed:
         raise PermissionDenied("Você não pode criar processos neste setor.")
-    process = AdministrativeProcess(created_by=user, origin_sector=origin_sector, **validated_data)
+    process = AdministrativeProcess(
+        created_by=user, origin_sector=origin_sector, workflow_version=workflow_version,
+        current_stage=current_stage, **validated_data,
+    )
     process.save()
     append_process_event(
         process=process,

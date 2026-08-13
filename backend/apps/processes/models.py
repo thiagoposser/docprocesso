@@ -47,6 +47,9 @@ class ProcessType(models.Model):
     code = models.SlugField(max_length=50, unique=True)
     description = models.TextField(blank=True)
     active = models.BooleanField(default=True, db_index=True)
+    workflow = models.ForeignKey(
+        "AdministrativeWorkflow", on_delete=models.PROTECT, related_name="process_types", null=True, blank=True
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -203,6 +206,12 @@ class AdministrativeProcess(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     process_type = models.ForeignKey(ProcessType, on_delete=models.PROTECT, related_name="processes")
+    workflow_version = models.ForeignKey(
+        WorkflowVersion, on_delete=models.PROTECT, related_name="processes", blank=True, null=True
+    )
+    current_stage = models.ForeignKey(
+        WorkflowStage, on_delete=models.PROTECT, related_name="processes", blank=True, null=True
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -261,6 +270,10 @@ class AdministrativeProcess(models.Model):
     def clean(self):
         super().clean()
         errors = {}
+        if self.current_stage_id and self.workflow_version_id and self.current_stage.workflow_version_id != self.workflow_version_id:
+            errors["current_stage"] = "A etapa atual deve pertencer à versão de fluxo do processo."
+        if bool(self.current_stage_id) != bool(self.workflow_version_id):
+            errors["workflow_version"] = "Versão e etapa de fluxo devem ser informadas em conjunto."
         if self.status != ProcessStatus.DRAFT and self.current_sector_id is None:
             errors["current_sector"] = "O setor atual é obrigatório fora do rascunho."
         if self.status == ProcessStatus.COMPLETED and self.completed_at is None:

@@ -139,6 +139,9 @@ class ProcessListSerializer(serializers.ModelSerializer):
     origin_sector_name = serializers.CharField(source="origin_sector.name", read_only=True)
     current_sector_name = serializers.CharField(source="current_sector.name", read_only=True, allow_null=True)
     assignee_name = serializers.CharField(source="assignee.full_name", read_only=True, allow_null=True)
+    workflow_name = serializers.CharField(source="workflow_version.name", read_only=True, allow_null=True)
+    workflow_version_number = serializers.IntegerField(source="workflow_version.version", read_only=True, allow_null=True)
+    current_stage_name = serializers.CharField(source="current_stage.name", read_only=True, allow_null=True)
 
     class Meta:
         model = AdministrativeProcess
@@ -146,6 +149,7 @@ class ProcessListSerializer(serializers.ModelSerializer):
             "id", "number", "title", "process_type", "process_type_name", "status", "version",
             "origin_sector", "origin_sector_name", "current_sector", "current_sector_name",
             "assignee", "assignee_name", "opened_at", "completed_at", "archived_at", "updated_at",
+            "workflow_version", "workflow_name", "workflow_version_number", "current_stage", "current_stage_name",
         )
 
 
