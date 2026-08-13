@@ -69,7 +69,8 @@ class ProcessViewSet(
 
     def get_queryset(self):
         queryset = AdministrativeProcess.objects.select_related(
-            "process_type", "created_by", "origin_sector", "current_sector", "assignee"
+            "process_type", "created_by", "origin_sector", "current_sector", "assignee",
+            "workflow_version", "current_stage",
         )
         user = self.request.user
         if not user.is_superuser:

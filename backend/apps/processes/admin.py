@@ -50,7 +50,7 @@ class WorkflowTransitionAdmin(admin.ModelAdmin):
 
 @admin.register(ProcessType)
 class ProcessTypeAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "active", "updated_at")
+    list_display = ("name", "code", "workflow", "active", "updated_at")
     list_filter = ("active",)
     search_fields = ("name", "code")
     readonly_fields = ("created_at", "updated_at")

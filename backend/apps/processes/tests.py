@@ -14,10 +14,10 @@ from rest_framework.test import APITestCase
 
 from apps.audit.models import AuditAction, AuditLog
 from apps.payments.models import Payment, Supplier
-from apps.sectors.models import Sector, UserSectorMembership
+from apps.sectors.models import OrganizationalFunction, Sector, UserSectorMembership
 
 from .event_services import append_process_event
-from .models import AdministrativeProcess, ProcessEvent, ProcessEventType, ProcessMovement, ProcessMovementAction, ProcessStatus, ProcessType
+from .models import AdministrativeProcess, ProcessEvent, ProcessEventType, ProcessMovement, ProcessMovementAction, ProcessStatus, ProcessType, WorkflowStage
 from .services import (
     InvalidProcessDestination,
     InvalidProcessTransition,
@@ -32,6 +32,7 @@ from .services import (
     reopen_process,
     return_process,
 )
+from .workflow_services import create_workflow
 
 
 class AdministrativeProcessModelTests(TestCase):
@@ -117,6 +118,14 @@ class AdministrativeProcessApiTests(APITestCase):
         self.membership = UserSectorMembership.objects.create(user=self.user, sector=self.sector, is_primary=True)
         UserSectorMembership.objects.create(user=self.other, sector=self.other_sector, is_primary=True)
         self.process_type = ProcessType.objects.create(name="API Administrativo", code="api-administrativo")
+        workflow = create_workflow(code="api-administrativo", name="API Administrativo")
+        initial_function = OrganizationalFunction.objects.create(name="Solicitante API", code="SOL-API")
+        WorkflowStage.objects.create(
+            workflow_version=workflow.current_version, order=1, name="Solicitação", is_initial=True,
+            responsible_function=initial_function,
+        )
+        self.process_type.workflow = workflow
+        self.process_type.save(update_fields=["workflow"])
         permissions = Permission.objects.filter(
             codename__in=["view_administrativeprocess", "add_administrativeprocess", "change_administrativeprocess"]
         )

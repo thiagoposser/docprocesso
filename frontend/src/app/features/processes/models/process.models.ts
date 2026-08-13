@@ -11,6 +11,8 @@ export interface ProcessItem {
   process_type: number; process_type_name: string; status: ProcessStatus; version: number;
   origin_sector: number; origin_sector_name: string; current_sector: number | null; current_sector_name: string | null;
   assignee: number | null; assignee_name: string | null; created_by?: number; created_by_name?: string;
+  workflow_version: number | null; workflow_name: string | null; workflow_version_number: number | null;
+  current_stage: number | null; current_stage_name: string | null;
   opened_at: string | null; completed_at: string | null; archived_at: string | null;
   created_at?: string; updated_at: string;
 }
