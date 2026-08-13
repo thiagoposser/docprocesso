@@ -24,6 +24,8 @@ class ProcessPermission(BasePermission):
         "documents": "processes.view_administrativeprocess",
         "available_actions": "processes.view_administrativeprocess",
         "execute_transition": "processes.view_administrativeprocess",
+        "eligible_assignees": "processes.assign_administrativeprocess",
+        "assign": "processes.assign_administrativeprocess",
     }
 
     def has_permission(self, request, view):

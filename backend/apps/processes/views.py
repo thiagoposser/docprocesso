@@ -15,7 +15,9 @@ from .filters import OperationalProcessSearchFilter
 from .permissions import ProcessPermission, ProcessTypePermission, WorkflowPermission, WorkflowStagePermission, WorkflowTransitionPermission
 from .serializers import (
     ProcessActionSerializer,
+    AssignProcessSerializer,
     AvailableWorkflowActionSerializer,
+    EligibleAssigneeSerializer,
     ExecuteWorkflowTransitionSerializer,
     ProcessDetailSerializer,
     ProcessListSerializer,
@@ -32,12 +34,14 @@ from .services import (
     InvalidProcessTransition,
     ProcessAccessDenied,
     ProcessConflictError,
+    assign_process,
     archive_process,
     cancel_process,
     complete_process,
     open_process,
     receive_process,
     reopen_process,
+    eligible_assignees,
 )
 from .workflow_execution import (
     TransitionDenied, TransitionVersionConflict, UnresolvedTransitionSector, execute_semantic_movement,
@@ -69,6 +73,8 @@ class ProcessViewSet(
             return ProcessActionSerializer
         if self.action == "execute_transition":
             return ExecuteWorkflowTransitionSerializer
+        if self.action == "assign":
+            return AssignProcessSerializer
         if self.action == "timeline":
             return ProcessTimelineEntrySerializer
         if self.action == "documents":
@@ -218,6 +224,32 @@ class ProcessViewSet(
             raise ValidationError({"detail": str(error)}) from error
         except AdministrativeProcess.DoesNotExist as error:
             raise NotFound("Processo não encontrado.") from error
+        return Response(ProcessDetailSerializer(updated, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["get"], url_path="eligible-assignees", url_name="eligible-assignees")
+    def eligible_assignees(self, request, pk=None):
+        process = self.get_queryset().filter(pk=pk).first()
+        if process is None:
+            raise NotFound()
+        self.check_object_permissions(request, process)
+        users = eligible_assignees(process=process, search=request.query_params.get("search", ""))[:20]
+        return Response(EligibleAssigneeSerializer(users, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def assign(self, request, pk=None):
+        process = self.get_object()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated = assign_process(
+                process_id=process.pk, actor=request.user,
+                assignee_id=serializer.validated_data["assignee"],
+                expected_version=serializer.validated_data["version"],
+            )
+        except ProcessConflictError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_409_CONFLICT)
+        except ProcessAccessDenied as error:
+            raise PermissionDenied(str(error)) from error
         return Response(ProcessDetailSerializer(updated, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"])

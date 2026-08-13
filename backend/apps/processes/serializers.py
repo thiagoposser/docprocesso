@@ -218,6 +218,16 @@ class ExecuteWorkflowTransitionSerializer(ProcessActionSerializer):
     action = serializers.SlugField(max_length=50)
 
 
+class EligibleAssigneeSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    username = serializers.CharField(read_only=True)
+    name = serializers.CharField(source="full_name", read_only=True)
+
+
+class AssignProcessSerializer(ProcessActionSerializer):
+    assignee = serializers.IntegerField(min_value=1)
+
+
 class AvailableWorkflowActionSerializer(serializers.Serializer):
     action = serializers.CharField(read_only=True)
     label = serializers.CharField(read_only=True)
