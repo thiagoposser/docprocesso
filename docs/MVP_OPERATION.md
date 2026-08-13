@@ -104,4 +104,4 @@ O banco `test_app_db` é descartável, mas sua exclusão ainda exige autorizaç�
 - O formato opaco do número do processo deve ser revisto apenas se houver exigência normativa de sequência.
 - Testes Angular automatizados dependem da correção da infraestrutura registrada na Issue #46; o build no container é o gate atual.
 
-Consulte também [política de acesso setorial](SECTOR_ACCESS_POLICY.md), [auditoria](AUDIT_POLICY.md), [desempenho](QUERY_PERFORMANCE.md) e [arquitetura](ARCHITECTURE.md).
+Consulte também [política de acesso setorial](SECTOR_ACCESS_POLICY.md), [auditoria](AUDIT_POLICY.md), [desempenho](QUERY_PERFORMANCE.md), [arquitetura](ARCHITECTURE.md) e [estratégia de migração e compatibilidade do workflow](WORKFLOW_MIGRATION_COMPATIBILITY_STRATEGY.md).
