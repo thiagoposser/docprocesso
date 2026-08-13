@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from apps.sectors.models import Sector
 
-from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
+from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessMovementAction, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
 from .workflow_services import create_workflow, update_workflow
 from .services import create_process
 
@@ -144,6 +144,18 @@ class ProcessListSerializer(serializers.ModelSerializer):
     current_stage_name = serializers.CharField(source="current_stage.name", read_only=True, allow_null=True)
     responsible_sector_name = serializers.CharField(source="responsible_sector.name", read_only=True, allow_null=True)
     responsible_function_name = serializers.CharField(source="responsible_function.name", read_only=True, allow_null=True)
+    created_by_name = serializers.CharField(source="created_by.full_name", read_only=True)
+    organizational_unit_name = serializers.SerializerMethodField()
+    last_movement_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    last_movement_action = serializers.CharField(read_only=True, allow_null=True)
+    last_movement_action_label = serializers.SerializerMethodField()
+
+    def get_organizational_unit_name(self, obj):
+        sector = obj.responsible_sector or obj.current_sector or obj.origin_sector
+        return sector.unit.name if sector and sector.unit else None
+
+    def get_last_movement_action_label(self, obj):
+        return dict(ProcessMovementAction.choices).get(getattr(obj, "last_movement_action", None))
 
     class Meta:
         model = AdministrativeProcess
@@ -153,14 +165,14 @@ class ProcessListSerializer(serializers.ModelSerializer):
             "assignee", "assignee_name", "opened_at", "completed_at", "archived_at", "updated_at",
             "workflow_version", "workflow_name", "workflow_version_number", "current_stage", "current_stage_name",
             "responsible_sector", "responsible_sector_name", "responsible_function", "responsible_function_name",
+            "organizational_unit_name", "created_by", "created_by_name", "created_at",
+            "last_movement_at", "last_movement_action", "last_movement_action_label",
         )
 
 
 class ProcessDetailSerializer(ProcessListSerializer):
-    created_by_name = serializers.CharField(source="created_by.full_name", read_only=True)
-
     class Meta(ProcessListSerializer.Meta):
-        fields = ProcessListSerializer.Meta.fields + ("description", "created_by", "created_by_name", "created_at")
+        fields = ProcessListSerializer.Meta.fields + ("description",)
 
 
 class ProcessWriteSerializer(serializers.ModelSerializer):

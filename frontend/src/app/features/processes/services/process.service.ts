@@ -19,7 +19,9 @@ export class ProcessService {
     let params = new HttpParams().set('ordering', query.ordering || '-updated_at');
     const values: Record<string, string | number | undefined> = {
       search: query.search, number: query.number, type: query.type, status: query.status,
-      sector: query.sector, assignee: query.assignee, created_from: query.createdFrom,
+      sector: query.sector, unit: query.unit, stage: query.stage,
+      responsible_sector: query.responsibleSector, responsible_function: query.responsibleFunction,
+      assignee: query.assignee, created_from: query.createdFrom,
       created_to: query.createdTo, page: query.page
     };
     for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== '') params = params.set(key, value);

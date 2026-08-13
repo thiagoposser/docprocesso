@@ -7,9 +7,9 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.sectors.models import OrganizationalFunction, Sector, UserSectorMembership
+from apps.sectors.models import OrganizationalFunction, OrganizationalUnit, Sector, UserSectorMembership
 
-from .models import AdministrativeProcess, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
+from .models import AdministrativeProcess, ProcessMovement, ProcessMovementAction, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
 from .workflow_services import create_workflow
 
 
@@ -17,7 +17,8 @@ class ProcessWorkboxTests(APITestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="workbox_user")
         self.other = get_user_model().objects.create_user(username="workbox_other")
-        self.sector = Sector.objects.create(name="Caixa setor", code="BOX-S")
+        self.unit = OrganizationalUnit.objects.create(name="Unidade caixa", acronym="UCX")
+        self.sector = Sector.objects.create(name="Caixa setor", code="BOX-S", unit=self.unit)
         self.other_sector = Sector.objects.create(name="Caixa outro", code="BOX-X")
         self.additional_sector = Sector.objects.create(name="Caixa adicional", code="BOX-A")
         self.function = OrganizationalFunction.objects.create(name="Analista caixa", code="BOX-F")
@@ -46,6 +47,10 @@ class ProcessWorkboxTests(APITestCase):
         )
         self.process_type = ProcessType.objects.create(name="Caixa", code="caixa", workflow=self.workflow)
         self.action_process = self.make_process("Ação", self.user, self.sector)
+        ProcessMovement.objects.create(
+            process=self.action_process, action=ProcessMovementAction.OPEN, actor=self.user,
+            to_sector=self.sector, status_before=ProcessStatus.DRAFT, status_after=ProcessStatus.OPEN,
+        )
         self.completed = self.make_process("Concluído", self.user, self.sector)
         AdministrativeProcess.objects.filter(pk=self.completed.pk).update(
             status=ProcessStatus.COMPLETED, completed_at=timezone.now()
@@ -57,7 +62,7 @@ class ProcessWorkboxTests(APITestCase):
         return AdministrativeProcess.objects.create(
             title=title, process_type=self.process_type, workflow_version=self.workflow.current_version,
             current_stage=self.source, created_by=creator, origin_sector=sector, current_sector=sector,
-            status=ProcessStatus.OPEN,
+            responsible_sector=sector, responsible_function=self.function, status=ProcessStatus.OPEN,
         )
 
     def get_scope(self, scope, **params):
@@ -79,6 +84,22 @@ class ProcessWorkboxTests(APITestCase):
         self.assertEqual(self.get_scope("invalid").status_code, status.HTTP_400_BAD_REQUEST)
         filtered = self.get_scope("my-sector", search="Ação")
         self.assertEqual([item["id"] for item in filtered.data["results"]], [self.action_process.pk])
+        for parameters in (
+            {"unit": self.unit.pk}, {"stage": self.source.pk},
+            {"responsible_sector": self.sector.pk}, {"responsible_function": self.function.pk},
+        ):
+            with self.subTest(parameters=parameters):
+                response = self.get_scope("my-sector", **parameters)
+                self.assertCountEqual(
+                    [item["id"] for item in response.data["results"]],
+                    [self.action_process.pk, self.completed.pk],
+                )
+        item = self.get_scope("my-action").data["results"][0]
+        self.assertEqual(item["organizational_unit_name"], self.unit.name)
+        self.assertEqual(item["created_by_name"], self.user.full_name)
+        self.assertEqual(item["last_movement_action"], ProcessMovementAction.OPEN)
+        self.assertEqual(item["last_movement_action_label"], ProcessMovementAction.OPEN.label)
+        self.assertIsNotNone(item["last_movement_at"])
 
     def test_first_page_has_bounded_queries(self):
         with CaptureQueriesContext(connection) as queries:
