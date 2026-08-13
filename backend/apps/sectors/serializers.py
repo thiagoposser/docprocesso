@@ -2,7 +2,26 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .membership_services import save_membership
-from .models import OrganizationalUnit, Sector, UserSectorMembership
+from .models import OrganizationalFunction, OrganizationalUnit, Sector, UserSectorMembership
+
+
+class OrganizationalFunctionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrganizationalFunction
+        fields = ("id", "name", "code", "description", "active", "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at")
+
+    def create(self, validated_data):
+        try:
+            return super().create(validated_data)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from error
+
+    def update(self, instance, validated_data):
+        try:
+            return super().update(instance, validated_data)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from error
 
 
 class OrganizationalUnitSerializer(serializers.ModelSerializer):

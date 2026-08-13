@@ -9,8 +9,47 @@ from rest_framework.test import APITestCase
 from apps.core.models import SystemSettings
 
 from .membership_services import save_membership
-from .models import OrganizationalUnit, Sector, UserSectorMembership
+from .models import OrganizationalFunction, OrganizationalUnit, Sector, UserSectorMembership
 from .policies import evaluate_sector_access
+
+
+class OrganizationalFunctionTests(APITestCase):
+    def setUp(self):
+        users = get_user_model()
+        self.reader = users.objects.create_user(username="function_reader")
+        self.manager = users.objects.create_user(username="function_manager")
+        self.manager.user_permissions.add(Permission.objects.get(codename="manage_organizational_function"))
+        self.active = OrganizationalFunction.objects.create(name="Gerente", code=" manager ")
+        self.inactive = OrganizationalFunction.objects.create(name="Histórica", code="HISTORY", active=False)
+
+    def test_code_is_normalized_unique_and_not_a_fixed_enum(self):
+        self.assertEqual(self.active.code, "MANAGER")
+        with self.assertRaises(ValidationError):
+            OrganizationalFunction.objects.create(name="Duplicada", code="manager")
+        self.assertFalse(hasattr(OrganizationalFunction, "FunctionChoices"))
+
+    def test_reader_only_sees_active_and_cannot_write(self):
+        self.client.force_authenticate(self.reader)
+        response = self.client.get(reverse("organizational-function-list"))
+        self.assertEqual([item["id"] for item in response.data["results"]], [self.active.pk])
+        self.assertEqual(self.client.post(reverse("organizational-function-list"), {"name": "Analista", "code": "ANALYST"}).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_manager_creates_edits_inactivates_filters_and_cannot_delete(self):
+        self.client.force_authenticate(self.manager)
+        created = self.client.post(reverse("organizational-function-list"), {"name": "Analista", "code": "analyst", "description": "Análise"}, format="json")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created.data["code"], "ANALYST")
+        detail = reverse("organizational-function-detail", args=[created.data["id"]])
+        self.assertEqual(self.client.patch(detail, {"active": False}, format="json").status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get(reverse("organizational-function-list"), {"active": "false"}).data["count"], 2)
+        self.assertEqual(self.client.delete(detail).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def test_unauthenticated_access_is_rejected_and_groups_are_unchanged(self):
+        from django.contrib.auth.models import Group
+        before = list(Group.objects.values_list("id", "name"))
+        self.assertEqual(self.client.get(reverse("organizational-function-list")).status_code, status.HTTP_401_UNAUTHORIZED)
+        OrganizationalFunction.objects.create(name="Assistente", code="ASSISTANT")
+        self.assertEqual(list(Group.objects.values_list("id", "name")), before)
 
 
 class OrganizationalUnitModelTests(TestCase):

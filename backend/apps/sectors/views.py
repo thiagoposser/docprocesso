@@ -5,9 +5,9 @@ from rest_framework.response import Response
 
 from apps.audit.mixins import AuditedWriteMixin
 
-from .models import OrganizationalUnit, Sector, UserSectorMembership
-from .permissions import OrganizationalUnitPermission, SectorPermission, UserSectorMembershipPermission
-from .serializers import OrganizationalUnitSerializer, SectorSerializer, UserSectorMembershipSerializer
+from .models import OrganizationalFunction, OrganizationalUnit, Sector, UserSectorMembership
+from .permissions import OrganizationalFunctionPermission, OrganizationalUnitPermission, SectorPermission, UserSectorMembershipPermission
+from .serializers import OrganizationalFunctionSerializer, OrganizationalUnitSerializer, SectorSerializer, UserSectorMembershipSerializer
 from .services import build_sector_tree
 
 
@@ -17,6 +17,34 @@ def can_manage_sectors(user):
 
 def can_manage_units(user):
     return user.is_staff or user.has_perm("sectors.manage_organizational_unit")
+
+
+class OrganizationalFunctionViewSet(
+    AuditedWriteMixin,
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = OrganizationalFunctionSerializer
+    permission_classes = [OrganizationalFunctionPermission]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name", "code", "description"]
+    ordering_fields = ["name", "code", "active", "created_at", "updated_at"]
+    ordering = ["name", "id"]
+    audit_label = "função organizacional"
+    audit_fields = ("name", "code", "description", "active")
+
+    def get_queryset(self):
+        queryset = OrganizationalFunction.objects.all()
+        params = self.request.query_params
+        can_manage = self.request.user.is_staff or self.request.user.has_perm("sectors.manage_organizational_function")
+        if not can_manage:
+            return queryset.filter(active=True)
+        if params.get("active") in {"true", "false"}:
+            queryset = queryset.filter(active=params["active"] == "true")
+        return queryset
 
 
 class OrganizationalUnitViewSet(
