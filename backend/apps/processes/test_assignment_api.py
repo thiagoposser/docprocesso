@@ -21,6 +21,7 @@ class ProcessAssignmentApiTests(APITestCase):
         self.wrong_function = User.objects.create_user(username="wrong_function")
         self.expired = User.objects.create_user(username="expired_user")
         self.other = User.objects.create_user(username="other_sector")
+        self.unlinked_manager = User.objects.create_user(username="unlinked_manager")
         self.sector = Sector.objects.create(name="Financeiro assignment", code="ASG-FIN")
         self.other_sector = Sector.objects.create(name="Outro assignment", code="ASG-OUT")
         self.function = OrganizationalFunction.objects.create(name="Analista assignment", code="ASG-AN")
@@ -38,6 +39,8 @@ class ProcessAssignmentApiTests(APITestCase):
         for user in (self.manager, self.candidate, self.wrong_function, self.expired, self.other):
             user.user_permissions.add(view_permission)
         self.manager.user_permissions.add(Permission.objects.get(codename="assign_administrativeprocess"))
+        self.other.user_permissions.add(Permission.objects.get(codename="assign_administrativeprocess"))
+        self.unlinked_manager.user_permissions.add(view_permission, Permission.objects.get(codename="assign_administrativeprocess"))
         workflow = create_workflow(code="assignment-flow", name="Assignment")
         stage = WorkflowStage.objects.create(
             workflow_version=workflow.current_version, order=1, name="Análise", is_initial=True,
@@ -75,3 +78,14 @@ class ProcessAssignmentApiTests(APITestCase):
         self.process.refresh_from_db()
         self.assertEqual(self.process.assignee, self.candidate)
         self.assertEqual(self.process.events.filter(event_type=ProcessEventType.ASSIGNMENT_CHANGED).count(), 1)
+
+    def test_assignment_cannot_be_forced_from_another_sector_or_without_membership(self):
+        url = reverse("process-assign", args=[self.process.pk])
+        for actor in (self.other, self.unlinked_manager):
+            with self.subTest(actor=actor.username):
+                self.client.force_authenticate(actor)
+                response = self.client.post(url, {"assignee": self.candidate.pk, "version": 1}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+                self.process.refresh_from_db()
+                self.assertIsNone(self.process.assignee_id)
+                self.assertFalse(self.process.events.filter(event_type=ProcessEventType.ASSIGNMENT_CHANGED).exists())
