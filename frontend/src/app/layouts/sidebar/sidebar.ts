@@ -20,12 +20,12 @@ import { SettingsService } from '../../features/settings/services/settings.servi
         @if (canViewPayments()) { <a routerLink="/pagamentos" routerLinkActive="active" title="Pagamentos" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="document" /></span><span class="nav-label">Pagamentos</span></a> }
         @if (auth.can('core.generate_reports')) { <a routerLink="/relatorios" routerLinkActive="active" title="Relatórios" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="dashboard" /></span><span class="nav-label">Relatórios</span></a> }
         <a routerLink="/documentos" routerLinkActive="active" title="Documentos" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="document" /></span><span class="nav-label">Documentos</span></a>
-        @if (auth.isAdmin() || canViewAudit() || canManageSectors()) {
+        @if (auth.isAdmin() || canViewAudit() || canManageStructure()) {
           <button type="button" class="submenu-toggle" [class.active]="adminOpen()" (click)="adminOpen.update(value => !value)" [attr.aria-expanded]="adminOpen()">
             <span class="nav-icon"><app-icon name="settings" /></span><span class="nav-label">Administração</span><span class="submenu-arrow"><app-icon name="arrow" [size]="14" /></span>
           </button>
           @if (adminOpen() && !collapsed()) {
-            <div class="submenu">@if (auth.isAdmin()) { <a routerLink="/administracao/usuarios" routerLinkActive="active" (click)="navigate.emit()">Usuários</a><a routerLink="/configuracoes" routerLinkActive="active" (click)="navigate.emit()">Configurações</a> } @if (canManageSectors()) { <a routerLink="/administracao/setores" routerLinkActive="active" (click)="navigate.emit()">Setores</a> } @if (canViewAudit()) { <a routerLink="/administracao/auditoria" routerLinkActive="active" (click)="navigate.emit()">Auditoria</a> }</div>
+            <div class="submenu">@if (auth.isAdmin()) { <a routerLink="/administracao/usuarios" routerLinkActive="active" (click)="navigate.emit()">Usuários</a><a routerLink="/administracao/estrutura/vinculos" routerLinkActive="active" (click)="navigate.emit()">Estrutura · Vínculos</a><a routerLink="/configuracoes" routerLinkActive="active" (click)="navigate.emit()">Configurações</a> } @if (canManageUnits()) { <a routerLink="/administracao/estrutura/unidades" routerLinkActive="active" (click)="navigate.emit()">Estrutura · Unidades</a> } @if (canManageSectors()) { <a routerLink="/administracao/estrutura/setores" routerLinkActive="active" (click)="navigate.emit()">Estrutura · Setores</a> } @if (canManageFunctions()) { <a routerLink="/administracao/estrutura/funcoes" routerLinkActive="active" (click)="navigate.emit()">Estrutura · Funções</a> } @if (canViewAudit()) { <a routerLink="/administracao/auditoria" routerLinkActive="active" (click)="navigate.emit()">Auditoria</a> }</div>
           }
         }
         <a routerLink="/perfil" routerLinkActive="active" title="Perfil" (click)="navigate.emit()"><span class="nav-icon"><app-icon name="user" /></span><span class="nav-label">Perfil</span></a>
@@ -45,5 +45,8 @@ export class Sidebar {
   readonly settings = inject(SettingsService);
   readonly canViewAudit = () => Boolean(this.auth.user()?.permissions.includes('audit.view_auditlog'));
   readonly canManageSectors = () => Boolean(this.auth.user()?.is_staff || this.auth.user()?.permissions.includes('sectors.manage_sector'));
+  readonly canManageUnits = () => Boolean(this.auth.user()?.is_staff || this.auth.user()?.permissions.includes('sectors.manage_organizational_unit'));
+  readonly canManageFunctions = () => Boolean(this.auth.user()?.is_staff || this.auth.user()?.permissions.includes('sectors.manage_organizational_function'));
+  readonly canManageStructure = () => this.canManageSectors() || this.canManageUnits() || this.canManageFunctions();
   readonly canViewPayments = () => this.auth.can('payments.view_payment') && this.auth.can('payments.view_financial_data') && this.auth.can('processes.view_administrativeprocess');
 }

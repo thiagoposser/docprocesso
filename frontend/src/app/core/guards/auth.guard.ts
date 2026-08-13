@@ -23,6 +23,16 @@ export const sectorGuard: CanActivateFn = () => {
   return auth.restore().pipe(map(() => auth.user()?.permissions.includes('sectors.manage_sector') || auth.user()?.is_staff ? true : router.createUrlTree(['/403'])));
 };
 
+export const unitGuard = structurePermissionGuard('sectors.manage_organizational_unit');
+export const organizationalFunctionGuard = structurePermissionGuard('sectors.manage_organizational_function');
+
+function structurePermissionGuard(permission: string): CanActivateFn {
+  return () => {
+    const auth = inject(AuthService); const router = inject(Router);
+    return auth.restore().pipe(map(() => auth.user()?.is_staff || auth.can(permission) ? true : router.createUrlTree(['/403'])));
+  };
+}
+
 function permissionGuard(permission: string): CanActivateFn {
   return () => {
     const auth = inject(AuthService); const router = inject(Router);
