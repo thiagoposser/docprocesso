@@ -20,7 +20,7 @@ def evaluate_sector_access(user, *, permission, sector, resource_state=None, all
         return SectorAccessDecision(False, "inactive_or_invalid_sector")
     if allowed_states is not None and resource_state not in set(allowed_states):
         return SectorAccessDecision(False, "invalid_resource_state")
-    membership = UserSectorMembership.objects.filter(user=user, sector=sector, active=True).only("is_manager").first()
+    membership = UserSectorMembership.objects.effective().filter(user=user, sector=sector).only("is_manager").first()
     if not membership:
         return SectorAccessDecision(False, "sector_membership_required")
     if require_manager and not membership.is_manager:

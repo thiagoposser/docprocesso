@@ -78,7 +78,7 @@ class ProcessViewSet(
         )
         user = self.request.user
         if not user.is_superuser:
-            sector_ids = user.sector_memberships.filter(active=True, sector__active=True).values_list("sector_id", flat=True)
+            sector_ids = user.sector_memberships.effective().values_list("sector_id", flat=True)
             queryset = queryset.filter(
                 Q(current_sector_id__in=sector_ids)
                 | Q(current_sector__isnull=True, origin_sector_id__in=sector_ids)

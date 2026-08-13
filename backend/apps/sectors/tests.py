@@ -4,6 +4,8 @@ from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework import status
 from rest_framework.test import APITestCase
 from apps.core.models import SystemSettings
@@ -336,6 +338,33 @@ class UserSectorMembershipTests(APITestCase):
         self.first = Sector.objects.create(name="Primeiro", code="FIRST")
         self.second = Sector.objects.create(name="Segundo", code="SECOND")
 
+    def test_effective_scope_respects_dates_and_inactive_function(self):
+        function = OrganizationalFunction.objects.create(name="Analista", code="ANALYST")
+        current = timezone.localdate()
+        future = UserSectorMembership.objects.create(user=self.user, sector=self.first, function=function, starts_on=current + timedelta(days=1))
+        self.assertNotIn(future, UserSectorMembership.objects.effective())
+        future.starts_on = current - timedelta(days=2)
+        future.ends_on = current - timedelta(days=1)
+        future.save()
+        self.assertNotIn(future, UserSectorMembership.objects.effective())
+        future.ends_on = None
+        future.save()
+        self.assertIn(future, UserSectorMembership.objects.effective())
+        function.active = False
+        function.save()
+        self.assertNotIn(future, UserSectorMembership.objects.effective())
+
+    def test_validates_date_range_and_unit_sector_consistency(self):
+        first_unit = OrganizationalUnit.objects.create(name="Primeira unidade", acronym="U1")
+        second_unit = OrganizationalUnit.objects.create(name="Segunda unidade", acronym="U2")
+        self.first.unit = first_unit
+        self.first.save()
+        current = timezone.localdate()
+        with self.assertRaisesMessage(ValidationError, "data final"):
+            UserSectorMembership.objects.create(user=self.user, sector=self.first, starts_on=current, ends_on=current - timedelta(days=1))
+        with self.assertRaisesMessage(ValidationError, "corresponder"):
+            UserSectorMembership.objects.create(user=self.user, unit=second_unit, sector=self.first)
+
     def test_user_can_belong_to_multiple_sectors_with_one_active_primary(self):
         primary = UserSectorMembership.objects.create(user=self.user, sector=self.first, is_primary=True)
         secondary = UserSectorMembership.objects.create(user=self.user, sector=self.second, is_manager=True)
@@ -357,6 +386,16 @@ class UserSectorMembershipTests(APITestCase):
         self.assertFalse(old.is_primary)
         self.assertTrue(new.is_primary)
         self.assertEqual(UserSectorMembership.objects.count(), 2)
+
+    def test_service_assigns_and_replaces_the_effective_primary(self):
+        first = save_membership(UserSectorMembership(user=self.user, sector=self.first))
+        second = save_membership(UserSectorMembership(user=self.user, sector=self.second))
+        self.assertTrue(first.is_primary)
+        self.assertFalse(second.is_primary)
+
+        save_membership(first, active=False)
+        second.refresh_from_db()
+        self.assertTrue(second.is_primary)
 
     def test_primary_must_be_active_and_user_sector_pair_is_unique(self):
         UserSectorMembership.objects.create(user=self.user, sector=self.first)
@@ -415,8 +454,10 @@ class UserSectorMembershipApiTests(APITestCase):
         self.admin = users.objects.create_user(username="membership_admin", is_staff=True)
         self.user = users.objects.create_user(username="membership_user")
         self.other = users.objects.create_user(username="membership_other")
-        self.first = Sector.objects.create(name="API Primeiro", code="API1")
-        self.second = Sector.objects.create(name="API Segundo", code="API2")
+        self.unit = OrganizationalUnit.objects.create(name="API Unidade", acronym="API-U")
+        self.function = OrganizationalFunction.objects.create(name="API Função", code="API-F")
+        self.first = Sector.objects.create(name="API Primeiro", code="API1", unit=self.unit)
+        self.second = Sector.objects.create(name="API Segundo", code="API2", unit=self.unit)
         self.mine = UserSectorMembership.objects.create(user=self.user, sector=self.first, is_primary=True)
         self.theirs = UserSectorMembership.objects.create(user=self.other, sector=self.second)
 
@@ -430,7 +471,7 @@ class UserSectorMembershipApiTests(APITestCase):
 
     def test_admin_creates_filters_updates_and_cannot_delete_membership(self):
         self.client.force_authenticate(self.admin)
-        created = self.client.post(reverse("user-sector-membership-list"), {"user": self.user.pk, "sector": self.second.pk, "active": True, "is_primary": True, "is_manager": True}, format="json")
+        created = self.client.post(reverse("user-sector-membership-list"), {"user": self.user.pk, "unit": self.unit.pk, "sector": self.second.pk, "function": self.function.pk, "active": True, "is_primary": True, "is_manager": True}, format="json")
         self.assertEqual(created.status_code, status.HTTP_201_CREATED)
         self.mine.refresh_from_db()
         self.assertFalse(self.mine.is_primary)
@@ -439,6 +480,14 @@ class UserSectorMembershipApiTests(APITestCase):
         detail = reverse("user-sector-membership-detail", args=[created.data["id"]])
         self.assertEqual(self.client.patch(detail, {"active": False, "is_primary": False}, format="json").status_code, status.HTTP_200_OK)
         self.assertEqual(self.client.delete(detail).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def test_admin_filters_context_and_new_link_requires_unit_and_function(self):
+        self.client.force_authenticate(self.admin)
+        missing = self.client.post(reverse("user-sector-membership-list"), {"user": self.user.pk, "sector": self.second.pk}, format="json")
+        self.assertEqual(missing.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("unit", missing.data)
+        filtered = self.client.get(reverse("user-sector-membership-list"), {"unit": self.unit.pk, "function": self.function.pk})
+        self.assertEqual(filtered.data["count"], 0)
 
     def test_unauthenticated_access_is_rejected(self):
         self.assertEqual(self.client.get(reverse("user-sector-membership-list")).status_code, status.HTTP_401_UNAUTHORIZED)

@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 
 class OrganizationalUnit(models.Model):
@@ -152,6 +153,20 @@ class Sector(models.Model):
         return f"{self.code} - {self.name}" if self.code else self.name
 
 
+class UserSectorMembershipQuerySet(models.QuerySet):
+    def effective(self, on_date=None):
+        current_date = on_date or timezone.localdate()
+        return self.filter(
+            active=True,
+            starts_on__lte=current_date,
+            sector__active=True,
+        ).filter(
+            models.Q(ends_on__isnull=True) | models.Q(ends_on__gte=current_date),
+            models.Q(unit__isnull=True) | models.Q(unit__active=True),
+            models.Q(function__isnull=True) | models.Q(function__active=True),
+        )
+
+
 class UserSectorMembership(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -163,11 +178,28 @@ class UserSectorMembership(models.Model):
         on_delete=models.PROTECT,
         related_name="user_memberships",
     )
+    unit = models.ForeignKey(
+        OrganizationalUnit,
+        on_delete=models.PROTECT,
+        related_name="user_memberships",
+        blank=True,
+        null=True,
+    )
+    function = models.ForeignKey(
+        OrganizationalFunction,
+        on_delete=models.PROTECT,
+        related_name="user_memberships",
+        blank=True,
+        null=True,
+    )
     active = models.BooleanField(default=True, db_index=True)
     is_primary = models.BooleanField(default=False)
     is_manager = models.BooleanField(default=False)
+    starts_on = models.DateField(default=timezone.localdate, db_index=True)
+    ends_on = models.DateField(blank=True, null=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    objects = UserSectorMembershipQuerySet.as_manager()
 
     class Meta:
         ordering = ["user_id", "-is_primary", "sector__name"]
@@ -184,6 +216,10 @@ class UserSectorMembership(models.Model):
                 condition=models.Q(is_primary=False) | models.Q(active=True),
                 name="primary_membership_must_be_active",
             ),
+            models.CheckConstraint(
+                condition=models.Q(ends_on__isnull=True) | models.Q(ends_on__gte=models.F("starts_on")),
+                name="membership_valid_date_range",
+            ),
         ]
         indexes = [
             models.Index(fields=["user", "active"], name="membership_user_active_idx"),
@@ -194,6 +230,10 @@ class UserSectorMembership(models.Model):
 
     def clean(self):
         super().clean()
+        if self.ends_on and self.starts_on and self.ends_on < self.starts_on:
+            raise ValidationError({"ends_on": "A data final não pode ser anterior à data inicial."})
+        if self.unit_id and self.sector_id and self.sector.unit_id != self.unit_id:
+            raise ValidationError({"unit": "A unidade deve corresponder à unidade do setor."})
         if self.is_primary and not self.active:
             raise ValidationError({"is_primary": "O setor principal deve estar ativo."})
         activating = self.active
@@ -204,6 +244,10 @@ class UserSectorMembership(models.Model):
             raise ValidationError({"user": "Não é possível vincular um usuário inativo."})
         if activating and self.sector_id and not self.sector.active:
             raise ValidationError({"sector": "Não é possível vincular um setor inativo."})
+        if activating and self.unit_id and not self.unit.active:
+            raise ValidationError({"unit": "Não é possível vincular uma unidade inativa."})
+        if activating and self.function_id and not self.function.active:
+            raise ValidationError({"function": "Não é possível vincular uma função inativa."})
 
     def save(self, *args, **kwargs):
         self.full_clean()

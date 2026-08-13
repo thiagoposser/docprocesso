@@ -50,7 +50,7 @@ class DocumentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMod
         if not is_administrator(self.request.user):
             queryset = queryset.filter(active=True, category__active=True)
         if not self.request.user.is_superuser:
-            sector_ids = self.request.user.sector_memberships.filter(active=True, sector__active=True).values_list("sector_id", flat=True)
+            sector_ids = self.request.user.sector_memberships.effective().values_list("sector_id", flat=True)
             process_filter = Q(process__current_sector_id__in=sector_ids) | Q(
                 process__current_sector__isnull=True, process__origin_sector_id__in=sector_ids
             )
@@ -149,7 +149,7 @@ class AttachmentViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
         queryset = super().get_queryset()
         if self.request.user.is_superuser:
             return queryset
-        sector_ids = self.request.user.sector_memberships.filter(active=True, sector__active=True).values_list("sector_id", flat=True)
+        sector_ids = self.request.user.sector_memberships.effective().values_list("sector_id", flat=True)
         process_filter = Q(document__process__current_sector_id__in=sector_ids) | Q(
             document__process__current_sector__isnull=True,
             document__process__origin_sector_id__in=sector_ids,

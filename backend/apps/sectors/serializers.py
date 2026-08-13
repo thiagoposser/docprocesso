@@ -117,11 +117,30 @@ class UserSectorMembershipSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source="user.full_name", read_only=True)
     sector_name = serializers.CharField(source="sector.name", read_only=True)
     sector_code = serializers.CharField(source="sector.code", read_only=True, allow_null=True)
+    unit_name = serializers.CharField(source="unit.name", read_only=True, allow_null=True)
+    unit_acronym = serializers.CharField(source="unit.acronym", read_only=True, allow_null=True)
+    function_name = serializers.CharField(source="function.name", read_only=True, allow_null=True)
+    function_code = serializers.CharField(source="function.code", read_only=True, allow_null=True)
 
     class Meta:
         model = UserSectorMembership
-        fields = ("id", "user", "user_name", "sector", "sector_name", "sector_code", "active", "is_primary", "is_manager", "created_at", "updated_at")
-        read_only_fields = ("id", "user_name", "sector_name", "sector_code", "created_at", "updated_at")
+        fields = (
+            "id", "user", "user_name", "unit", "unit_name", "unit_acronym",
+            "sector", "sector_name", "sector_code", "function", "function_name", "function_code",
+            "active", "is_primary", "is_manager", "starts_on", "ends_on", "created_at", "updated_at",
+        )
+        read_only_fields = (
+            "id", "user_name", "unit_name", "unit_acronym", "sector_name", "sector_code",
+            "function_name", "function_code", "created_at", "updated_at",
+        )
+
+    def validate(self, attrs):
+        if not self.instance:
+            if not attrs.get("unit"):
+                raise serializers.ValidationError({"unit": "Selecione a unidade do vínculo."})
+            if not attrs.get("function"):
+                raise serializers.ValidationError({"function": "Selecione a função do vínculo."})
+        return attrs
 
     def create(self, validated_data):
         try:
