@@ -212,6 +212,13 @@ class AdministrativeProcess(models.Model):
     current_stage = models.ForeignKey(
         WorkflowStage, on_delete=models.PROTECT, related_name="processes", blank=True, null=True
     )
+    responsible_sector = models.ForeignKey(
+        "sectors.Sector", on_delete=models.PROTECT, related_name="responsible_processes", blank=True, null=True
+    )
+    responsible_function = models.ForeignKey(
+        "sectors.OrganizationalFunction", on_delete=models.PROTECT,
+        related_name="responsible_processes", blank=True, null=True,
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -274,6 +281,10 @@ class AdministrativeProcess(models.Model):
             errors["current_stage"] = "A etapa atual deve pertencer à versão de fluxo do processo."
         if bool(self.current_stage_id) != bool(self.workflow_version_id):
             errors["workflow_version"] = "Versão e etapa de fluxo devem ser informadas em conjunto."
+        if self.current_stage_id and not self.responsible_sector_id:
+            self.responsible_sector = self.current_stage.responsible_sector or self.origin_sector
+        if self.current_stage_id and not self.responsible_sector_id:
+            errors["responsible_sector"] = "Processo com fluxo deve possuir setor responsável."
         if self.status != ProcessStatus.DRAFT and self.current_sector_id is None:
             errors["current_sector"] = "O setor atual é obrigatório fora do rascunho."
         if self.status == ProcessStatus.COMPLETED and self.completed_at is None:

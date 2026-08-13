@@ -79,6 +79,7 @@ class ProcessViewSet(
         queryset = AdministrativeProcess.objects.select_related(
             "process_type", "created_by", "origin_sector", "current_sector", "assignee",
             "workflow_version", "current_stage",
+            "responsible_sector", "responsible_function",
         )
         user = self.request.user
         if not user.is_superuser:
@@ -164,8 +165,8 @@ class ProcessViewSet(
                     fallback = (
                         Q(current_stage__outgoing_transitions__authorized_sector_id__isnull=True)
                         & Q(current_stage__outgoing_transitions__authorized_function_id__isnull=True)
-                        & (Q(current_stage__responsible_sector_id__isnull=True) | Q(current_stage__responsible_sector_id__in=sector_ids))
-                        & (Q(current_stage__responsible_function_id__isnull=True) | Q(current_stage__responsible_function_id__in=function_ids))
+                        & Q(responsible_sector_id__in=sector_ids)
+                        & (Q(responsible_function_id__isnull=True) | Q(responsible_function_id__in=function_ids))
                     )
                     queryset = queryset.filter(
                         transition_permission,
@@ -269,6 +270,8 @@ class ProcessViewSet(
                 process_status=process.status, permission=permission,
                 note="requirement-preview" if transition.requires_note else "",
                 has_attachment=transition.requires_attachment,
+                responsible_sector_id=process.responsible_sector_id,
+                responsible_function_id=process.responsible_function_id,
             )
             if decision.allowed:
                 actions.append({

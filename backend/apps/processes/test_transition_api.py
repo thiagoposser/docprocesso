@@ -4,7 +4,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.sectors.models import Sector, UserSectorMembership
+from apps.sectors.models import OrganizationalFunction, Sector, UserSectorMembership
 
 from .models import AdministrativeProcess, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
 from .workflow_services import create_workflow
@@ -16,6 +16,7 @@ class ProcessTransitionApiTests(APITestCase):
         self.outsider = get_user_model().objects.create_user(username="transition_outsider")
         self.origin = Sector.objects.create(name="Origem API action", code="ACT-O")
         self.destination = Sector.objects.create(name="Destino API action", code="ACT-D")
+        self.target_function = OrganizationalFunction.objects.create(name="Aprovador API action", code="ACT-F")
         UserSectorMembership.objects.create(user=self.user, sector=self.origin, is_primary=True)
         UserSectorMembership.objects.create(user=self.user, sector=self.destination)
         UserSectorMembership.objects.create(user=self.outsider, sector=self.origin, is_primary=True)
@@ -29,7 +30,7 @@ class ProcessTransitionApiTests(APITestCase):
         )
         self.target = WorkflowStage.objects.create(
             workflow_version=self.workflow.current_version, order=2, name="Aprovação", is_final=True,
-            responsible_sector=self.destination,
+            responsible_sector=self.destination, responsible_function=self.target_function,
         )
         self.transition = WorkflowTransition.objects.create(
             source_stage=self.source, destination_stage=self.target, code="aprovar", name="Aprovar",
@@ -77,6 +78,8 @@ class ProcessTransitionApiTests(APITestCase):
         self.assertEqual(executed.status_code, status.HTTP_200_OK)
         self.assertEqual(executed.data["current_stage"], self.target.pk)
         self.assertEqual(executed.data["current_sector"], self.destination.pk)
+        self.assertEqual(executed.data["responsible_sector"], self.destination.pk)
+        self.assertEqual(executed.data["responsible_function"], self.target_function.pk)
 
     def test_rejects_illegal_stale_and_terminal_actions(self):
         illegal = self.client.post(self.execute_url, {"action": "inexistente", "version": 1}, format="json")

@@ -23,6 +23,7 @@ class UnresolvedTransitionSector(Exception):
 def authorize_transition_execution(
     *, user, transition_id, current_stage_id, expected_workflow_version_id,
     process_status, permission, note="", has_attachment=False,
+    responsible_sector_id=None, responsible_function_id=None,
 ):
     current_stage = WorkflowStage.objects.select_for_update().select_related("workflow_version__workflow").get(
         pk=current_stage_id
@@ -35,6 +36,7 @@ def authorize_transition_execution(
     decision = evaluate_transition_authorization(
         user, transition=transition, current_stage=current_stage, process_status=process_status,
         permission=permission, note=note, has_attachment=has_attachment,
+        responsible_sector_id=responsible_sector_id, responsible_function_id=responsible_function_id,
     )
     if not decision.allowed:
         raise TransitionDenied(decision.reason)
@@ -49,9 +51,8 @@ def execute_semantic_movement(
     process = AdministrativeProcess.objects.select_for_update(of=("self",)).select_related("current_sector", "origin_sector").get(
         pk=process_id
     )
-    current_stage = WorkflowStage.objects.select_related("responsible_sector").get(pk=current_stage_id)
     process_sector_id = process.current_sector_id or process.origin_sector_id
-    if not current_stage.responsible_sector_id or current_stage.responsible_sector_id != process_sector_id:
+    if process.current_stage_id != current_stage_id or process.responsible_sector_id != process_sector_id:
         raise TransitionDenied("stage_does_not_match_process_sector")
     permission = (
         "processes.return_administrativeprocess"
@@ -62,6 +63,8 @@ def execute_semantic_movement(
         user=user, transition_id=transition_id, current_stage_id=current_stage_id,
         expected_workflow_version_id=expected_workflow_version_id, process_status=process.status,
         permission=permission, note=note, has_attachment=has_attachment,
+        responsible_sector_id=process.responsible_sector_id,
+        responsible_function_id=process.responsible_function_id,
     )
     destination = transition.destination_stage.responsible_sector
     if destination is None:
@@ -72,5 +75,7 @@ def execute_semantic_movement(
         expected_version=expected_process_version, note=note,
     )
     updated.current_stage = transition.destination_stage
-    updated.save(update_fields=["current_stage", "updated_at"])
+    updated.responsible_sector = destination
+    updated.responsible_function = transition.destination_stage.responsible_function
+    updated.save(update_fields=["current_stage", "responsible_sector", "responsible_function", "updated_at"])
     return updated
