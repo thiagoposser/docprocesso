@@ -28,9 +28,8 @@ export interface ProcessQuery {
 
 export type ProcessPage = PaginatedResponse<ProcessItem>;
 
-export type ProcessAction = 'open' | 'forward' | 'receive' | 'return' | 'complete' | 'reopen' | 'cancel' | 'archive';
-
-export interface ProcessActionPayload { version: number; destination?: number; note?: string; }
+export interface WorkflowAction { action: string; label: string; destination_stage: number; destination_stage_name: string; requires_note: boolean; requires_attachment: boolean; is_return: boolean; }
+export interface ExecuteTransitionPayload { action: string; version: number; note?: string; }
 
 export interface ProcessMovement {
   kind: 'movement' | 'event'; id: string; action: string | null; action_label: string | null;
