@@ -1,6 +1,31 @@
 from django.contrib import admin
 
-from .models import AdministrativeProcess, ProcessEvent, ProcessMovement, ProcessType
+from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessEvent, ProcessMovement, ProcessType, WorkflowVersion
+
+
+@admin.register(AdministrativeWorkflow)
+class AdministrativeWorkflowAdmin(admin.ModelAdmin):
+    list_display = ("code", "current_version", "active", "updated_at")
+    list_filter = ("active",)
+    readonly_fields = ("code", "current_version", "created_at", "updated_at")
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WorkflowVersion)
+class WorkflowVersionAdmin(admin.ModelAdmin):
+    list_display = ("workflow", "version", "name", "created_at")
+    readonly_fields = ("workflow", "version", "name", "description", "created_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return request.method in {"GET", "HEAD", "OPTIONS"}
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(ProcessType)

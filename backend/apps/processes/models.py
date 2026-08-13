@@ -60,6 +60,39 @@ class ProcessType(models.Model):
         return f"{self.code} - {self.name}"
 
 
+class AdministrativeWorkflow(models.Model):
+    code = models.SlugField(max_length=50, unique=True)
+    active = models.BooleanField(default=True, db_index=True)
+    current_version = models.ForeignKey(
+        "WorkflowVersion", on_delete=models.PROTECT, related_name="current_for_workflows", null=True, blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["code", "id"]
+        verbose_name = "fluxo administrativo"
+        verbose_name_plural = "fluxos administrativos"
+
+    def __str__(self):
+        return self.current_version.name if self.current_version_id else self.code
+
+
+class WorkflowVersion(models.Model):
+    workflow = models.ForeignKey(AdministrativeWorkflow, on_delete=models.PROTECT, related_name="versions")
+    version = models.PositiveIntegerField()
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["workflow_id", "-version"]
+        constraints = [models.UniqueConstraint(fields=["workflow", "version"], name="unique_workflow_version")]
+
+    def __str__(self):
+        return f"{self.name} v{self.version}"
+
+
 class AdministrativeProcess(models.Model):
     number = models.CharField(max_length=35, unique=True, default=generate_process_number, editable=False)
     title = models.CharField(max_length=200)

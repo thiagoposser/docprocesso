@@ -10,9 +10,9 @@ from apps.documents.models import DocumentRole
 from apps.documents.serializers import ProcessDocumentSerializer
 from apps.documents.services import create_process_document
 
-from .models import AdministrativeProcess, ProcessStatus, ProcessType
+from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessStatus, ProcessType
 from .filters import OperationalProcessSearchFilter
-from .permissions import ProcessPermission, ProcessTypePermission
+from .permissions import ProcessPermission, ProcessTypePermission, WorkflowPermission
 from .serializers import (
     ProcessActionSerializer,
     ProcessDestinationActionSerializer,
@@ -22,6 +22,7 @@ from .serializers import (
     ProcessRequiredNoteActionSerializer,
     ProcessReturnActionSerializer,
     ProcessTypeSerializer,
+    AdministrativeWorkflowSerializer,
     ProcessWriteSerializer,
 )
 from .services import (
@@ -271,3 +272,13 @@ class ProcessTypeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
     def get_queryset(self):
         return ProcessType.objects.filter(active=True)
+
+
+class AdministrativeWorkflowViewSet(
+    mixins.ListModelMixin, mixins.CreateModelMixin, mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin, viewsets.GenericViewSet,
+):
+    serializer_class = AdministrativeWorkflowSerializer
+    permission_classes = [WorkflowPermission]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+    queryset = AdministrativeWorkflow.objects.select_related("current_version").all()

@@ -3,7 +3,8 @@ from rest_framework import serializers
 
 from apps.sectors.models import Sector
 
-from .models import AdministrativeProcess, ProcessStatus, ProcessType
+from .models import AdministrativeProcess, AdministrativeWorkflow, ProcessStatus, ProcessType
+from .workflow_services import create_workflow, update_workflow
 from .services import create_process
 
 
@@ -11,6 +12,30 @@ class ProcessTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProcessType
         fields = ("id", "name", "code", "description")
+
+
+class AdministrativeWorkflowSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source="current_version.name", max_length=150)
+    description = serializers.CharField(source="current_version.description", required=False, allow_blank=True)
+    version = serializers.IntegerField(source="current_version.version", read_only=True)
+
+    class Meta:
+        model = AdministrativeWorkflow
+        fields = ("id", "code", "name", "description", "active", "version", "created_at", "updated_at")
+        read_only_fields = ("created_at", "updated_at")
+
+    def create(self, validated_data):
+        version = validated_data.pop("current_version")
+        return create_workflow(**validated_data, **version)
+
+    def validate_code(self, value):
+        if self.instance and value != self.instance.code:
+            raise serializers.ValidationError("O código do fluxo não pode ser alterado.")
+        return value
+
+    def update(self, instance, validated_data):
+        version = validated_data.pop("current_version", {})
+        return update_workflow(workflow=instance, active=validated_data.get("active"), **version)
 
 
 class ProcessListSerializer(serializers.ModelSerializer):
