@@ -10,8 +10,16 @@ class UserSectorMembershipSummarySerializer(serializers.Serializer):
     sector = serializers.IntegerField(source="sector_id", read_only=True)
     sector_name = serializers.CharField(source="sector.name", read_only=True)
     sector_code = serializers.CharField(source="sector.code", read_only=True, allow_null=True)
+    unit = serializers.IntegerField(source="unit_id", read_only=True, allow_null=True)
+    unit_name = serializers.CharField(source="unit.name", read_only=True, allow_null=True)
+    unit_acronym = serializers.CharField(source="unit.acronym", read_only=True, allow_null=True)
+    function = serializers.IntegerField(source="function_id", read_only=True, allow_null=True)
+    function_name = serializers.CharField(source="function.name", read_only=True, allow_null=True)
+    function_code = serializers.CharField(source="function.code", read_only=True, allow_null=True)
     is_primary = serializers.BooleanField(read_only=True)
     is_manager = serializers.BooleanField(read_only=True)
+    starts_on = serializers.DateField(read_only=True)
+    ends_on = serializers.DateField(read_only=True, allow_null=True)
 
 
 class CurrentUserSerializer(serializers.ModelSerializer):
@@ -37,7 +45,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     def get_sector_memberships(self, obj):
         memberships = getattr(obj, "active_sector_memberships", None)
         if memberships is None:
-            memberships = obj.sector_memberships.filter(active=True).select_related("sector").order_by("-is_primary", "sector__name")
+            memberships = obj.sector_memberships.effective().select_related("unit", "sector", "function").order_by("-is_primary", "sector__name")
         return UserSectorMembershipSummarySerializer(memberships, many=True).data
 
 

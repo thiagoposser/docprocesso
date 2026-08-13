@@ -141,19 +141,23 @@ class UserSectorMembershipViewSet(
     serializer_class = UserSectorMembershipSerializer
     permission_classes = [UserSectorMembershipPermission]
     audit_label = "vínculo de usuário com setor"
-    audit_fields = ("user", "sector", "active", "is_primary", "is_manager")
+    audit_fields = ("user", "unit", "sector", "function", "active", "is_primary", "is_manager", "starts_on", "ends_on")
 
     def get_queryset(self):
-        queryset = UserSectorMembership.objects.select_related("user", "sector")
+        queryset = UserSectorMembership.objects.select_related("user", "unit", "sector", "function")
         user = self.request.user
         can_manage = user.is_staff or user.groups.filter(name="Administrador").exists() or user.has_perm("sectors.manage_user_sector_membership")
         if not can_manage:
-            return queryset.filter(user=user, active=True)
+            return queryset.effective().filter(user=user)
         params = self.request.query_params
         if params.get("user"):
             queryset = queryset.filter(user_id=params["user"])
         if params.get("sector"):
             queryset = queryset.filter(sector_id=params["sector"])
+        if params.get("unit"):
+            queryset = queryset.filter(unit_id=params["unit"])
+        if params.get("function"):
+            queryset = queryset.filter(function_id=params["function"])
         if params.get("active") in {"true", "false"}:
             queryset = queryset.filter(active=params["active"] == "true")
         return queryset

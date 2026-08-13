@@ -76,7 +76,7 @@ class UserViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateModelMi
         "groups",
         Prefetch(
             "sector_memberships",
-            queryset=UserSectorMembership.objects.filter(active=True).select_related("sector").order_by("-is_primary", "sector__name"),
+            queryset=UserSectorMembership.objects.effective().select_related("unit", "sector", "function").order_by("-is_primary", "sector__name"),
             to_attr="active_sector_memberships",
         ),
     ).all()

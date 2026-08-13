@@ -31,8 +31,8 @@ class SectorAdmin(admin.ModelAdmin):
 
 @admin.register(UserSectorMembership)
 class UserSectorMembershipAdmin(admin.ModelAdmin):
-    list_display = ("user", "sector", "active", "is_primary", "is_manager", "updated_at")
-    list_filter = ("active", "is_primary", "is_manager", "sector")
-    search_fields = ("user__username", "user__first_name", "user__last_name", "sector__name", "sector__code")
-    autocomplete_fields = ("user", "sector")
+    list_display = ("user", "unit", "sector", "function", "active", "is_primary", "starts_on", "ends_on", "updated_at")
+    list_filter = ("active", "is_primary", "is_manager", "unit", "sector", "function")
+    search_fields = ("user__username", "user__first_name", "user__last_name", "unit__name", "sector__name", "sector__code", "function__name", "function__code")
+    autocomplete_fields = ("user", "unit", "sector", "function")
     readonly_fields = ("created_at", "updated_at")

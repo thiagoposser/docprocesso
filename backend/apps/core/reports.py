@@ -39,7 +39,7 @@ def process_report_queryset(user, params):
 
     queryset = AdministrativeProcess.objects.all()
     if not user.is_superuser:
-        sectors = user.sector_memberships.filter(active=True, sector__active=True).values_list("sector_id", flat=True)
+        sectors = user.sector_memberships.effective().values_list("sector_id", flat=True)
         queryset = queryset.filter(current_sector_id__in=sectors)
     filters = {
         "current_sector_id": _integer(params, "sector"),
@@ -64,7 +64,7 @@ def payment_report_queryset(user, params):
 
     queryset = Payment.objects.all()
     if not user.is_superuser:
-        sectors = user.sector_memberships.filter(active=True, sector__active=True).values_list("sector_id", flat=True)
+        sectors = user.sector_memberships.effective().values_list("sector_id", flat=True)
         queryset = queryset.filter(sector_id__in=sectors)
     filters = {"sector_id": _integer(params, "sector"), "supplier_id": _integer(params, "supplier")}
     queryset = queryset.filter(**{key: value for key, value in filters.items() if value is not None})

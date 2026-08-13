@@ -26,7 +26,7 @@ def dashboard_summary(user=None):
 def _sector_ids(user):
     if user.is_superuser:
         return None
-    return user.sector_memberships.filter(active=True, sector__active=True).values_list("sector_id", flat=True)
+    return user.sector_memberships.effective().values_list("sector_id", flat=True)
 
 
 def process_dashboard_summary(user):

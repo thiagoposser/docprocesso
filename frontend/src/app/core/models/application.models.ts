@@ -15,7 +15,7 @@ export interface AuthUser {
   permissions: string[]; photo_url: string | null; sector_memberships: UserSectorMembershipSummary[]; last_login: string | null; date_joined: string;
 }
 
-export interface UserSectorMembershipSummary { id: number; sector: number; sector_name: string; sector_code: string | null; is_primary: boolean; is_manager: boolean; }
+export interface UserSectorMembershipSummary { id: number; unit: number | null; unit_name: string | null; unit_acronym: string | null; sector: number; sector_name: string; sector_code: string | null; function: number | null; function_name: string | null; function_code: string | null; is_primary: boolean; is_manager: boolean; starts_on: string; ends_on: string | null; }
 export interface UserSectorMembership extends UserSectorMembershipSummary { user: number; user_name: string; active: boolean; created_at: string; updated_at: string; }
 
 export interface TokenPair { access: string; refresh: string; }
