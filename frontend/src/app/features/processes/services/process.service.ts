@@ -21,7 +21,7 @@ export class ProcessService {
       search: query.search, number: query.number, type: query.type, status: query.status,
       sector: query.sector, unit: query.unit, stage: query.stage,
       responsible_sector: query.responsibleSector, responsible_function: query.responsibleFunction,
-      assignee: query.assignee, created_from: query.createdFrom,
+      assignee: query.assignee, stalled: query.stalled, created_from: query.createdFrom,
       created_to: query.createdTo, page: query.page
     };
     for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== '') params = params.set(key, value);

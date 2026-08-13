@@ -20,6 +20,8 @@ class OperationalProcessSearchFilter(filters.BaseFilterBackend):
             | Q(current_sector__code__icontains=term) | Q(origin_sector__name__icontains=term)
             | Q(current_stage__name__icontains=term) | Q(responsible_sector__name__icontains=term)
             | Q(responsible_function__name__icontains=term) | Q(responsible_sector__unit__name__icontains=term)
+            | Q(current_stage__outgoing_transitions__code__icontains=term)
+            | Q(current_stage__outgoing_transitions__name__icontains=term)
             | Q(assignee__username__icontains=term) | Q(assignee__first_name__icontains=term)
             | Q(assignee__last_name__icontains=term) | Q(status__icontains=term)
             | Q(movements__note__icontains=term) | Q(events__title__icontains=term)

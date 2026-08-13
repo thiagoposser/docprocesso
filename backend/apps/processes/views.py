@@ -1,4 +1,7 @@
 from django.db.models import OuterRef, Q, Subquery
+from datetime import timedelta
+
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from rest_framework import filters, mixins, status, viewsets
@@ -47,6 +50,7 @@ from .workflow_execution import (
     TransitionDenied, TransitionVersionConflict, UnresolvedTransitionSector, execute_semantic_movement,
 )
 from .workflow_policies import evaluate_transition_authorization
+from .workbox import WORKBOX_SCOPES, apply_workbox_scope
 
 
 class ProcessViewSet(
@@ -142,6 +146,13 @@ class ProcessViewSet(
             if params["status"] not in ProcessStatus.values:
                 raise ValidationError({"status": "Informe um estado de processo válido."})
             queryset = queryset.filter(status=params["status"])
+        if params.get("stalled"):
+            if params["stalled"] != "true":
+                raise ValidationError({"stalled": "Use true para filtrar processos parados."})
+            queryset = queryset.filter(
+                status__in=(ProcessStatus.OPEN, ProcessStatus.IN_PROGRESS),
+                updated_at__lt=timezone.now() - timedelta(days=7),
+            )
         for parameter, lookup in {
             "created_from": "created_at__date__gte",
             "created_to": "created_at__date__lte",
@@ -164,57 +175,10 @@ class ProcessViewSet(
     @action(detail=False, methods=["get"])
     def workbox(self, request):
         scope = request.query_params.get("scope", "my-action")
-        if scope not in {"my-action", "my-sector", "created", "following", "completed"}:
+        if scope not in WORKBOX_SCOPES:
             raise ValidationError({"scope": "Informe uma categoria válida da caixa de trabalho."})
         queryset = self.filter_queryset(self.get_queryset())
-        user = request.user
-        memberships = user.sector_memberships.effective()
-        sector_ids = memberships.values_list("sector_id", flat=True)
-        function_ids = memberships.exclude(function_id__isnull=True).values_list("function_id", flat=True)
-        if scope == "my-action":
-            if not user.is_superuser:
-                transition_permission = Q()
-                if user.has_perm("processes.forward_administrativeprocess"):
-                    transition_permission |= Q(current_stage__outgoing_transitions__is_return=False)
-                if user.has_perm("processes.return_administrativeprocess"):
-                    transition_permission |= Q(current_stage__outgoing_transitions__is_return=True)
-                if not transition_permission:
-                    queryset = queryset.none()
-                else:
-                    explicit = (
-                        Q(current_stage__outgoing_transitions__authorized_sector_id__isnull=False)
-                        | Q(current_stage__outgoing_transitions__authorized_function_id__isnull=False)
-                    )
-                    explicit &= (
-                        Q(current_stage__outgoing_transitions__authorized_sector_id__isnull=True)
-                        | Q(current_stage__outgoing_transitions__authorized_sector_id__in=sector_ids)
-                    ) & (
-                        Q(current_stage__outgoing_transitions__authorized_function_id__isnull=True)
-                        | Q(current_stage__outgoing_transitions__authorized_function_id__in=function_ids)
-                    )
-                    fallback = (
-                        Q(current_stage__outgoing_transitions__authorized_sector_id__isnull=True)
-                        & Q(current_stage__outgoing_transitions__authorized_function_id__isnull=True)
-                        & Q(responsible_sector_id__in=sector_ids)
-                        & (Q(responsible_function_id__isnull=True) | Q(responsible_function_id__in=function_ids))
-                    )
-                    queryset = queryset.filter(
-                        transition_permission,
-                        Q(current_stage__outgoing_transitions__active=True),
-                        explicit | fallback,
-                    )
-            queryset = queryset.exclude(status__in=[ProcessStatus.COMPLETED, ProcessStatus.CANCELLED, ProcessStatus.ARCHIVED])
-        elif scope == "my-sector":
-            queryset = queryset.filter(
-                Q(current_sector_id__in=sector_ids) | Q(current_sector__isnull=True, origin_sector_id__in=sector_ids)
-            )
-        elif scope == "created":
-            queryset = queryset.filter(created_by=user)
-        elif scope == "following":
-            queryset = queryset.filter(Q(created_by=user) | Q(movements__actor=user))
-        else:
-            queryset = queryset.filter(status__in=[ProcessStatus.COMPLETED, ProcessStatus.ARCHIVED])
-        queryset = queryset.distinct()
+        queryset = apply_workbox_scope(queryset, user=request.user, scope=scope)
         page = self.paginate_queryset(queryset)
         serializer = ProcessListSerializer(page if page is not None else queryset, many=True)
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
