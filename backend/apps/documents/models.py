@@ -150,6 +150,23 @@ class Attachment(models.Model):
     external_url = models.URLField(max_length=1000, blank=True, validators=[URLValidator(schemes=["http", "https"])])
     active = models.BooleanField(default=True, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_attachments")
+    workflow_version = models.ForeignKey(
+        "processes.WorkflowVersion", on_delete=models.PROTECT,
+        related_name="attachments", blank=True, null=True,
+    )
+    stage = models.ForeignKey(
+        "processes.WorkflowStage", on_delete=models.PROTECT,
+        related_name="attachments", blank=True, null=True,
+    )
+    sector = models.ForeignKey(
+        "sectors.Sector", on_delete=models.PROTECT,
+        related_name="document_attachments", blank=True, null=True,
+    )
+    function = models.ForeignKey(
+        "sectors.OrganizationalFunction", on_delete=models.PROTECT,
+        related_name="document_attachments", blank=True, null=True,
+    )
+    context_snapshot = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     deactivated_at = models.DateTimeField(blank=True, null=True)
 
@@ -165,6 +182,13 @@ class Attachment(models.Model):
 
     def clean(self):
         super().clean()
+        if self.pk:
+            historical_fields = (
+                "workflow_version_id", "stage_id", "sector_id", "function_id", "context_snapshot"
+            )
+            previous = Attachment.objects.filter(pk=self.pk).values(*historical_fields).first()
+            if previous and any(previous[field] != getattr(self, field) for field in historical_fields):
+                raise ValidationError("O contexto histórico do anexo é imutável.")
         if bool(self.file) == bool(self.external_url):
             raise ValidationError("Informe um arquivo ou uma URL externa, mas não ambos.")
         activating = self.active

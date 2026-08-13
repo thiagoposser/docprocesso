@@ -16,7 +16,7 @@ class TransitionAuthorizationDecision:
 
 def evaluate_transition_authorization(
     user, *, transition, current_stage, process_status, permission, note="", has_attachment=False,
-    responsible_sector_id=None, responsible_function_id=None,
+    responsible_sector_id=None, responsible_function_id=None, available_document_roles=(),
 ):
     if not getattr(user, "is_authenticated", False):
         return TransitionAuthorizationDecision(False, "authentication_required")
@@ -30,6 +30,8 @@ def evaluate_transition_authorization(
         return TransitionAuthorizationDecision(False, "permission_required")
     if transition.requires_note and not note.strip():
         return TransitionAuthorizationDecision(False, "note_required")
+    if transition.required_document_role and transition.required_document_role not in available_document_roles:
+        return TransitionAuthorizationDecision(False, "attachment_required")
     if transition.requires_attachment and not has_attachment:
         return TransitionAuthorizationDecision(False, "attachment_required")
     if user.is_superuser:

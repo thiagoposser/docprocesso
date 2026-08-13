@@ -120,10 +120,18 @@ class DocumentViewSet(AuditedWriteMixin, mixins.ListModelMixin, mixins.CreateMod
         if request.method == "GET":
             if not request.user.has_perm("documents.view_attachment"):
                 self.permission_denied(request)
-            items = document.attachments.select_related("created_by").all()
+            items = document.attachments.select_related(
+                "created_by", "workflow_version", "stage", "sector", "function"
+            ).all()
             return Response(AttachmentSerializer(items, many=True, context=self.get_serializer_context()).data)
         if not request.user.has_perm("documents.add_attachment") or not can_access_process_document(
             request.user, document, document_permission="documents.change_document"
+        ):
+            self.permission_denied(request)
+        if document.role == DocumentRole.PAYMENT_RECEIPT and not all(
+            request.user.has_perm(permission) for permission in (
+                "payments.view_payment", "payments.view_financial_data", "payments.manage_payment_receipt",
+            )
         ):
             self.permission_denied(request)
         serializer = AttachmentSerializer(data=request.data, context=self.get_serializer_context())
@@ -142,7 +150,8 @@ class AttachmentViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     permission_classes = [AttachmentPermission]
     http_method_names = ["get", "patch", "head", "options"]
     queryset = Attachment.objects.select_related(
-        "document", "document__process", "document__process__current_sector", "document__process__origin_sector", "created_by"
+        "document", "document__process", "document__process__current_sector", "document__process__origin_sector",
+        "created_by", "workflow_version", "stage", "sector", "function",
     )
 
     def get_queryset(self):

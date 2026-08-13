@@ -88,7 +88,7 @@ class WorkflowTransitionSerializer(serializers.ModelSerializer):
         fields = (
             "id", "source_stage", "source_name", "code", "name", "destination_stage", "destination_name",
             "authorized_sector", "sector_name", "authorized_function", "function_name",
-            "requires_note", "requires_attachment", "is_return", "active", "created_at", "updated_at",
+            "requires_note", "requires_attachment", "required_document_role", "is_return", "active", "created_at", "updated_at",
         )
         read_only_fields = ("created_at", "updated_at")
 
@@ -235,6 +235,7 @@ class AvailableWorkflowActionSerializer(serializers.Serializer):
     destination_stage_name = serializers.CharField(read_only=True)
     requires_note = serializers.BooleanField(read_only=True)
     requires_attachment = serializers.BooleanField(read_only=True)
+    required_document_role = serializers.CharField(read_only=True, allow_blank=True)
     is_return = serializers.BooleanField(read_only=True)
 
 

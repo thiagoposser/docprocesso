@@ -30,7 +30,7 @@ export interface ProcessQuery {
 
 export type ProcessPage = PaginatedResponse<ProcessItem>;
 
-export interface WorkflowAction { action: string; label: string; destination_stage: number; destination_stage_name: string; requires_note: boolean; requires_attachment: boolean; is_return: boolean; }
+export interface WorkflowAction { action: string; label: string; destination_stage: number; destination_stage_name: string; requires_note: boolean; requires_attachment: boolean; required_document_role: string; is_return: boolean; }
 export interface ExecuteTransitionPayload { action: string; version: number; note?: string; }
 export interface EligibleAssignee { id: number; username: string; name: string; }
 
@@ -56,11 +56,14 @@ export interface ProcessAttachment {
   id: number; file_name: string | null; download_url: string | null;
   source_type: 'file' | 'external_url'; active: boolean;
   created_at: string; deactivated_at: string | null;
+  workflow_version: number | null; workflow_version_number: number | null;
+  stage: number | null; stage_name: string | null; sector: number | null; sector_name: string | null;
+  function: number | null; function_name: string | null; context_snapshot: Record<string, unknown>;
 }
 
 export interface ProcessDocument {
   id: number; process: number; title: string; description: string;
-  category: number; category_name: string; active: boolean;
+  category: number; category_name: string; role: 'GENERAL' | 'PAYMENT_RECEIPT'; active: boolean;
   created_by_name: string; created_at: string; updated_at: string;
   attachments: ProcessAttachment[];
 }

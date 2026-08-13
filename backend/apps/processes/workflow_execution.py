@@ -24,6 +24,7 @@ def authorize_transition_execution(
     *, user, transition_id, current_stage_id, expected_workflow_version_id,
     process_status, permission, note="", has_attachment=False,
     responsible_sector_id=None, responsible_function_id=None,
+    available_document_roles=(),
 ):
     current_stage = WorkflowStage.objects.select_for_update().select_related("workflow_version__workflow").get(
         pk=current_stage_id
@@ -37,6 +38,7 @@ def authorize_transition_execution(
         user, transition=transition, current_stage=current_stage, process_status=process_status,
         permission=permission, note=note, has_attachment=has_attachment,
         responsible_sector_id=responsible_sector_id, responsible_function_id=responsible_function_id,
+        available_document_roles=available_document_roles,
     )
     if not decision.allowed:
         raise TransitionDenied(decision.reason)
@@ -47,6 +49,7 @@ def authorize_transition_execution(
 def execute_semantic_movement(
     *, user, process_id, transition_id, current_stage_id, expected_process_version,
     expected_workflow_version_id, note="", has_attachment=False,
+    available_document_roles=(),
 ):
     process = AdministrativeProcess.objects.select_for_update(of=("self",)).select_related("current_sector", "origin_sector").get(
         pk=process_id
@@ -65,6 +68,7 @@ def execute_semantic_movement(
         permission=permission, note=note, has_attachment=has_attachment,
         responsible_sector_id=process.responsible_sector_id,
         responsible_function_id=process.responsible_function_id,
+        available_document_roles=available_document_roles,
     )
     destination = transition.destination_stage.responsible_sector
     if destination is None:

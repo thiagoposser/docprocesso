@@ -18,7 +18,7 @@ import { ProcessService } from '../../services/process.service';
           @if (selected(); as option) {
             <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
               <p class="mb-2"><strong>Próxima etapa:</strong> {{ option.destination_stage_name }}</p>
-              @if (option.requires_attachment) { <div class="alert alert-info py-2" role="status">Esta ação exige que o processo possua ao menos um documento ou anexo ativo. Use a seção de documentos antes de confirmar.</div> }
+              @if (option.requires_attachment) { <div class="alert alert-info py-2" role="status">Esta ação exige {{ option.required_document_role === 'PAYMENT_RECEIPT' ? 'um comprovante de pagamento' : 'ao menos um documento ou anexo ativo' }}. Use a seção de documentos antes de confirmar.</div> }
               <label class="form-label" for="action-note">Observação{{ option.requires_note ? ' (obrigatória)' : ' (opcional)' }}</label><textarea id="action-note" class="form-control" rows="3" maxlength="2000" formControlName="note" [class.is-invalid]="form.controls.note.invalid && form.controls.note.touched"></textarea><div class="invalid-feedback">Informe a observação exigida para esta ação.</div>
               @if (!selectionValid()) { <div class="alert alert-warning mt-3 mb-0" role="alert">Esta ação não está mais disponível. O texto foi preservado para revisão.</div> }
               @if (error()) { <div class="alert alert-danger mt-3 mb-0" role="alert">{{ error() }}</div> }

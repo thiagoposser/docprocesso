@@ -161,6 +161,11 @@ class WorkflowTransition(models.Model):
     )
     requires_note = models.BooleanField(default=False)
     requires_attachment = models.BooleanField(default=False)
+    required_document_role = models.CharField(
+        max_length=24,
+        choices=(("GENERAL", "Documento geral"), ("PAYMENT_RECEIPT", "Comprovante de pagamento")),
+        blank=True,
+    )
     is_return = models.BooleanField(default=False)
     active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -302,6 +302,7 @@ class ProcessViewSet(
                 process_status=process.status, permission=permission,
                 note="requirement-preview" if transition.requires_note else "",
                 has_attachment=transition.requires_attachment,
+                available_document_roles=(transition.required_document_role,) if transition.required_document_role else (),
                 responsible_sector_id=process.responsible_sector_id,
                 responsible_function_id=process.responsible_function_id,
             )
@@ -312,6 +313,7 @@ class ProcessViewSet(
                     "destination_stage_name": transition.destination_stage.name,
                     "requires_note": transition.requires_note,
                     "requires_attachment": transition.requires_attachment,
+                    "required_document_role": transition.required_document_role,
                     "is_return": transition.is_return,
                 })
         return Response(AvailableWorkflowActionSerializer(actions, many=True).data)
@@ -331,6 +333,9 @@ class ProcessViewSet(
         has_attachment = process.documents.filter(active=True).filter(
             Q(file__gt="") | Q(external_url__gt="") | Q(attachments__active=True)
         ).exists()
+        available_document_roles = tuple(process.documents.filter(active=True).filter(
+            Q(file__gt="") | Q(external_url__gt="") | Q(attachments__active=True)
+        ).values_list("role", flat=True).distinct())
         try:
             updated = execute_semantic_movement(
                 user=request.user, process_id=process.pk, transition_id=transition.pk,
@@ -338,6 +343,7 @@ class ProcessViewSet(
                 expected_process_version=serializer.validated_data["version"],
                 expected_workflow_version_id=process.workflow_version_id,
                 note=serializer.validated_data.get("note", ""), has_attachment=has_attachment,
+                available_document_roles=available_document_roles,
             )
         except TransitionVersionConflict as error:
             return Response({"detail": str(error)}, status=status.HTTP_409_CONFLICT)
@@ -450,7 +456,13 @@ class ProcessViewSet(
         if request.method == "GET":
             if not request.user.has_perm("documents.view_document"):
                 self.permission_denied(request)
-            queryset = process.documents.exclude(role=DocumentRole.PAYMENT_RECEIPT).select_related("category", "created_by").prefetch_related("attachments")
+            queryset = process.documents.all()
+            can_view_receipts = all(request.user.has_perm(permission) for permission in (
+                "payments.view_payment", "payments.view_financial_data", "payments.view_paymentreceipt",
+            ))
+            if not can_view_receipts:
+                queryset = queryset.exclude(role=DocumentRole.PAYMENT_RECEIPT)
+            queryset = queryset.select_related("category", "created_by").prefetch_related("attachments")
             page = self.paginate_queryset(queryset)
             serializer = self.get_serializer(page if page is not None else queryset, many=True)
             return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
@@ -458,6 +470,12 @@ class ProcessViewSet(
             self.permission_denied(request)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        if serializer.validated_data.get("role") == DocumentRole.PAYMENT_RECEIPT and not all(
+            request.user.has_perm(permission) for permission in (
+                "payments.view_payment", "payments.view_financial_data", "payments.manage_payment_receipt",
+            )
+        ):
+            raise PermissionDenied("Apenas usuários financeiros autorizados podem incluir comprovantes.")
         document = create_process_document(
             process=process, actor=request.user, request=request, **serializer.validated_data
         )

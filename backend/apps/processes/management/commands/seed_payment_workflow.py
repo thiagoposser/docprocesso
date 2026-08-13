@@ -81,6 +81,7 @@ class Command(BaseCommand):
                 "name": name, "destination_stage": stages[destination],
                 "authorized_sector": sectors[sector_key], "authorized_function": functions[function_key],
                 "requires_note": is_return, "requires_attachment": attachment,
+                "required_document_role": "PAYMENT_RECEIPT" if code == "anexar-comprovante" else "",
                 "is_return": is_return, "active": True,
             }
             transition, created = WorkflowTransition.objects.get_or_create(
