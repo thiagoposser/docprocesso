@@ -16,6 +16,7 @@ import { ProcessService } from '../../services/process.service';
     <app-page-header title="Processos" description="Consulte e acompanhe os processos administrativos do seu escopo.">
       @if (auth.can('processes.add_administrativeprocess')) { <a class="btn btn-primary" routerLink="/processos/novo">+ Novo processo</a> }
     </app-page-header>
+    <nav class="nav nav-pills gap-2 mb-3" aria-label="Categorias da caixa de trabalho">@for (item of workboxScopes; track item.value) { <button class="nav-link" [class.active]="workboxScope === item.value" type="button" (click)="selectScope(item.value)">{{ item.label }}</button> }</nav>
     <section class="card border-0 shadow-sm">
       <div class="card-body border-bottom"><div class="row g-3">
         <div class="col-12 col-lg-4"><label class="form-label" for="process-search">Buscar</label><input id="process-search" class="form-control" type="search" maxlength="100" placeholder="Número, texto, nota, fornecedor, setor ou responsável" [(ngModel)]="search" (keyup.enter)="applyFilters()"></div>
@@ -38,13 +39,16 @@ export class ProcessList {
   readonly processes = signal<ProcessItem[]>([]); readonly types = signal<ProcessType[]>([]); readonly sectors = signal<FlatSectorNode[]>([]);
   readonly count = signal(0); readonly next = signal<string | null>(null); readonly page = signal(1); readonly loading = signal(true); readonly error = signal('');
   readonly labels = PROCESS_STATUS_LABELS; readonly statuses = Object.keys(PROCESS_STATUS_LABELS) as ProcessStatus[];
+  readonly workboxScopes = [{ value: 'my-action', label: 'Aguardando minha ação' }, { value: 'my-sector', label: 'Meu setor' }, { value: 'created', label: 'Criados por mim' }, { value: 'following', label: 'Acompanhando' }, { value: 'completed', label: 'Concluídos' }];
   search = ''; type = ''; status = ''; sector = ''; assignee = ''; ordering = '-updated_at';
+  workboxScope = 'my-action';
   constructor() { this.api.types().subscribe({ next: items => this.types.set(items), error: response => this.handleError(response) }); this.sectorApi.tree('true').subscribe({ next: tree => this.sectors.set(this.flatten(tree)), error: response => this.handleError(response) }); this.load(); }
   applyFilters() { this.page.set(1); this.load(); }
+  selectScope(scope: string) { if (this.workboxScope === scope) return; this.workboxScope = scope; this.page.set(1); this.load(); }
   goTo(page: number) { if (page < 1 || (page > this.page() && !this.next())) return; this.page.set(page); this.load(); }
   canEdit(item: ProcessItem) { return item.status === 'DRAFT' && this.auth.canInSector('processes.change_administrativeprocess', item.origin_sector); }
   statusClass(value: ProcessStatus) { return `text-bg-${value === 'COMPLETED' ? 'success' : value === 'CANCELLED' ? 'danger' : value === 'DRAFT' ? 'secondary' : 'primary'}`; }
-  private load() { this.loading.set(true); this.error.set(''); this.api.list({ search: this.search, type: this.type, status: this.status, sector: this.sector, assignee: this.assignee, ordering: this.ordering, page: this.page() }).subscribe({ next: result => { this.processes.set(result.results); this.count.set(result.count); this.next.set(result.next); this.loading.set(false); }, error: response => { this.handleError(response); this.loading.set(false); } }); }
+  private load() { this.loading.set(true); this.error.set(''); this.api.workbox(this.workboxScope, { search: this.search, type: this.type, status: this.status, sector: this.sector, assignee: this.assignee, ordering: this.ordering, page: this.page() }).subscribe({ next: result => { this.processes.set(result.results); this.count.set(result.count); this.next.set(result.next); this.loading.set(false); }, error: response => { this.handleError(response); this.loading.set(false); } }); }
   private handleError(response: { status?: number }) { this.error.set(response?.status === 403 ? 'Você não possui permissão para consultar processos.' : response?.status === 404 ? 'Recurso não encontrado.' : response?.status === 409 ? 'Os dados foram alterados por outro usuário. Atualize a consulta.' : 'Não foi possível carregar os processos.'); }
   private flatten(nodes: SectorTreeNode[], level = 0): FlatSectorNode[] { return nodes.flatMap(node => [{ ...node, level }, ...this.flatten(node.children, level + 1)]); }
 }
