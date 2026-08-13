@@ -26,7 +26,7 @@ export interface ProcessPayload {
 
 export interface ProcessQuery {
   search?: string; number?: string; type?: string; status?: string; sector?: string; unit?: string; stage?: string;
-  responsibleSector?: string; responsibleFunction?: string; assignee?: string;
+  responsibleSector?: string; responsibleFunction?: string; assignee?: string; stalled?: string;
   createdFrom?: string; createdTo?: string; ordering?: string; page?: number;
 }
 

@@ -34,7 +34,7 @@ export class PaymentList {
   readonly auth = inject(AuthService); private readonly api = inject(PaymentService); private readonly sectorApi = inject(SectorService); private readonly route = inject(ActivatedRoute);
   readonly payments = signal<Payment[]>([]); readonly suppliers = signal<Supplier[]>([]); readonly sectors = signal<FlatSectorNode[]>([]); readonly summary = signal<PaymentDeadlineSummary|null>(null); readonly loading = signal(true); readonly error = signal(''); readonly count = signal(0); readonly next = signal<string|null>(null); readonly page = signal(1);
   readonly labels = PAYMENT_STATUS_LABELS; readonly statuses = Object.keys(PAYMENT_STATUS_LABELS) as PaymentStatus[];
-  search=''; process=this.route.snapshot.queryParamMap.get('process') || ''; status=''; deadline=''; sector=''; supplier=''; dueFrom=''; dueTo=''; ordering='due_date';
+  search=''; process=this.route.snapshot.queryParamMap.get('process') || ''; status=this.route.snapshot.queryParamMap.get('status') || ''; deadline=this.route.snapshot.queryParamMap.get('deadline') || ''; sector=''; supplier=''; dueFrom=''; dueTo=''; ordering='due_date';
   constructor() { this.api.suppliers().subscribe({ next: page => this.suppliers.set(page.results) }); this.sectorApi.tree('true').subscribe({ next: tree => this.sectors.set(this.flatten(tree)) }); this.api.deadlineSummary().subscribe({next: summary => this.summary.set(summary)}); this.load(); }
   apply(){ this.page.set(1); this.load(); } go(page:number){ if(page<1||(page>this.page()&&!this.next()))return; this.page.set(page); this.load(); }
   selectDeadline(deadline:string){this.deadline=deadline;this.apply();}

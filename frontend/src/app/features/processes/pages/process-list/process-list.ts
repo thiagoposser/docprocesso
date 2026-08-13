@@ -1,7 +1,7 @@
 import { DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { AuthService } from '../../../../core/auth/auth.service';
 import { PageHeader } from '../../../../shared/components/page-header/page-header';
@@ -37,14 +37,14 @@ import { ProcessService } from '../../services/process.service';
     </section>`
 })
 export class ProcessList {
-  readonly auth = inject(AuthService); private readonly api = inject(ProcessService); private readonly sectorApi = inject(SectorService);
+  readonly auth = inject(AuthService); private readonly api = inject(ProcessService); private readonly sectorApi = inject(SectorService); private readonly route = inject(ActivatedRoute);
   readonly processes = signal<ProcessItem[]>([]); readonly types = signal<ProcessType[]>([]); readonly sectors = signal<FlatSectorNode[]>([]);
   readonly count = signal(0); readonly next = signal<string | null>(null); readonly page = signal(1); readonly loading = signal(true); readonly error = signal('');
   readonly labels = PROCESS_STATUS_LABELS; readonly statuses = Object.keys(PROCESS_STATUS_LABELS) as ProcessStatus[];
   readonly workboxScopes = [{ value: 'my-action', label: 'Aguardando minha ação' }, { value: 'my-sector', label: 'Meu setor' }, { value: 'created', label: 'Criados por mim' }, { value: 'following', label: 'Acompanhando' }, { value: 'completed', label: 'Concluídos' }];
-  search = ''; type = ''; status = ''; unit = ''; stage = ''; responsibleSector = ''; assignee = ''; ordering = '-updated_at';
+  search = ''; type = ''; status = ''; unit = ''; stage = ''; responsibleSector = ''; assignee = ''; stalled = ''; ordering = '-updated_at';
   workboxScope = 'my-action';
-  constructor() { this.api.types().subscribe({ next: items => this.types.set(items), error: response => this.handleError(response) }); this.sectorApi.tree('true').subscribe({ next: tree => this.sectors.set(this.flatten(tree)), error: response => this.handleError(response) }); this.load(); }
+  constructor() { const query = this.route.snapshot.queryParamMap; const scope = query.get('scope'); if (scope && this.workboxScopes.some(item => item.value === scope)) this.workboxScope = scope; this.search = query.get('search') || ''; this.stage = query.get('stage') || ''; this.stalled = query.get('stalled') || ''; this.ordering = query.get('ordering') || '-updated_at'; this.api.types().subscribe({ next: items => this.types.set(items), error: response => this.handleError(response) }); this.sectorApi.tree('true').subscribe({ next: tree => this.sectors.set(this.flatten(tree)), error: response => this.handleError(response) }); this.load(); }
   applyFilters() { this.page.set(1); this.load(); }
   selectScope(scope: string) { if (this.workboxScope === scope) return; this.workboxScope = scope; this.page.set(1); this.load(); }
   goTo(page: number) { if (page < 1 || (page > this.page() && !this.next())) return; this.page.set(page); this.load(); }
@@ -53,7 +53,7 @@ export class ProcessList {
   stages() { const values = new Map<number, string>(); for (const process of this.processes()) if (process.current_stage && process.current_stage_name) values.set(process.current_stage, process.current_stage_name); return [...values].map(([id, name]) => ({ id, name })); }
   assignees() { const values = new Map<number, string>(); for (const process of this.processes()) if (process.assignee && process.assignee_name) values.set(process.assignee, process.assignee_name); return [...values].map(([id, name]) => ({ id, name })); }
   statusClass(value: ProcessStatus) { return `text-bg-${value === 'COMPLETED' ? 'success' : value === 'CANCELLED' ? 'danger' : value === 'DRAFT' ? 'secondary' : 'primary'}`; }
-  private load() { this.loading.set(true); this.error.set(''); this.api.workbox(this.workboxScope, { search: this.search, type: this.type, status: this.status, unit: this.unit, stage: this.stage, responsibleSector: this.responsibleSector, assignee: this.assignee, ordering: this.ordering, page: this.page() }).subscribe({ next: result => { this.processes.set(result.results); this.count.set(result.count); this.next.set(result.next); this.loading.set(false); }, error: response => { this.handleError(response); this.loading.set(false); } }); }
+  private load() { this.loading.set(true); this.error.set(''); this.api.workbox(this.workboxScope, { search: this.search, type: this.type, status: this.status, unit: this.unit, stage: this.stage, responsibleSector: this.responsibleSector, assignee: this.assignee, stalled: this.stalled, ordering: this.ordering, page: this.page() }).subscribe({ next: result => { this.processes.set(result.results); this.count.set(result.count); this.next.set(result.next); this.loading.set(false); }, error: response => { this.handleError(response); this.loading.set(false); } }); }
   private handleError(response: { status?: number }) { this.error.set(response?.status === 403 ? 'Você não possui permissão para consultar processos.' : response?.status === 404 ? 'Recurso não encontrado.' : response?.status === 409 ? 'Os dados foram alterados por outro usuário. Atualize a consulta.' : 'Não foi possível carregar os processos.'); }
   private flatten(nodes: SectorTreeNode[], level = 0): FlatSectorNode[] { return nodes.flatMap(node => [{ ...node, level }, ...this.flatten(node.children, level + 1)]); }
 }
