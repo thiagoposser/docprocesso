@@ -73,16 +73,24 @@ class AttachmentSerializer(serializers.ModelSerializer):
     file_name = serializers.SerializerMethodField()
     download_url = serializers.SerializerMethodField()
     source_type = serializers.CharField(read_only=True)
+    workflow_version_number = serializers.IntegerField(source="workflow_version.version", read_only=True, allow_null=True)
+    stage_name = serializers.CharField(source="stage.name", read_only=True, allow_null=True)
+    sector_name = serializers.CharField(source="sector.name", read_only=True, allow_null=True)
+    function_name = serializers.CharField(source="function.name", read_only=True, allow_null=True)
 
     class Meta:
         model = Attachment
         fields = (
             "id", "document", "file", "external_url", "file_name", "download_url",
             "source_type", "active", "created_by", "created_at", "deactivated_at",
+            "workflow_version", "workflow_version_number", "stage", "stage_name",
+            "sector", "sector_name", "function", "function_name", "context_snapshot",
         )
         read_only_fields = (
             "id", "document", "file_name", "download_url", "source_type", "active",
             "created_by", "created_at", "deactivated_at",
+            "workflow_version", "workflow_version_number", "stage", "stage_name",
+            "sector", "sector_name", "function", "function_name", "context_snapshot",
         )
 
     def validate(self, attrs):
@@ -105,7 +113,7 @@ class ProcessDocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
         fields = (
-            "id", "process", "title", "description", "category", "category_name", "active",
+            "id", "process", "title", "description", "category", "category_name", "role", "active",
             "created_by", "created_by_name", "created_at", "updated_at", "attachments",
         )
         read_only_fields = (

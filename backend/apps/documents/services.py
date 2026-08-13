@@ -3,7 +3,7 @@ from django.utils import timezone
 
 from apps.audit.models import AuditAction
 from apps.audit.services import record_audit
-from apps.processes.event_services import append_process_event
+from apps.processes.event_services import append_process_event, build_organizational_snapshot
 from apps.processes.models import ProcessEventType
 
 from .models import Attachment, Document, safe_original_filename
@@ -29,6 +29,19 @@ def create_attachment(*, document, actor, request=None, **data):
     upload = data.get("file")
     if upload:
         data["original_file_name"] = safe_original_filename(upload.name)
+    process = document.process
+    if process:
+        data.update({
+            "workflow_version": process.workflow_version,
+            "stage": process.current_stage,
+            "sector": process.responsible_sector or process.current_sector or process.origin_sector,
+            "function": process.responsible_function,
+            "context_snapshot": {
+                **build_organizational_snapshot(process=process, actor=actor),
+                "document_id": document.pk,
+                "document_role": document.role,
+            },
+        })
     attachment = Attachment.objects.create(document=document, created_by=actor, **data)
     record_audit(
         action=AuditAction.FILE_LIFECYCLE, description="Anexo criado", request=request, entity=attachment,

@@ -5,6 +5,8 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.sectors.models import OrganizationalFunction, Sector, UserSectorMembership
+from apps.documents.models import Attachment, Document, DocumentCategory, DocumentRole
+from apps.documents.services import create_attachment
 
 from .models import AdministrativeProcess, ProcessStatus, ProcessType, WorkflowStage, WorkflowTransition
 from .workflow_services import create_workflow
@@ -58,7 +60,7 @@ class ProcessTransitionApiTests(APITestCase):
         self.assertEqual(response.data, [{
             "action": "aprovar", "label": "Aprovar", "destination_stage": self.target.pk,
             "destination_stage_name": "Aprovação", "requires_note": True,
-            "requires_attachment": True, "is_return": False,
+            "requires_attachment": True, "required_document_role": "", "is_return": False,
         }])
         self.client.force_authenticate(self.outsider)
         self.assertEqual(self.client.get(self.available_url).data, [])
@@ -126,3 +128,29 @@ class ProcessTransitionApiTests(APITestCase):
             reverse("process-transitions", args=[legacy.pk]), {"action": "aprovar", "version": 1}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_requires_active_attachment_with_configured_document_role(self):
+        self.transition.requires_note = False
+        self.transition.required_document_role = DocumentRole.PAYMENT_RECEIPT
+        self.transition.save()
+        category = DocumentCategory.objects.create(name="Comprovantes workflow")
+        general = Document.objects.create(
+            title="Documento geral", category=category, process=self.process,
+            role=DocumentRole.GENERAL, created_by=self.user,
+        )
+        contextual = create_attachment(
+            document=general, actor=self.user, external_url="https://example.com/general.pdf"
+        )
+        self.assertEqual(contextual.workflow_version, self.workflow.current_version)
+        self.assertEqual(contextual.stage, self.source)
+        self.assertEqual(contextual.sector, self.origin)
+        self.assertEqual(contextual.context_snapshot["document_role"], DocumentRole.GENERAL)
+        blocked = self.client.post(self.execute_url, {"action": "aprovar", "version": 1}, format="json")
+        self.assertEqual(blocked.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+        receipt = Document.objects.create(
+            title="Comprovante", category=category, process=self.process,
+            role=DocumentRole.PAYMENT_RECEIPT, created_by=self.user,
+        )
+        create_attachment(document=receipt, actor=self.user, external_url="https://example.com/receipt.pdf")
+        allowed = self.client.post(self.execute_url, {"action": "aprovar", "version": 1}, format="json")
+        self.assertEqual(allowed.status_code, status.HTTP_200_OK)

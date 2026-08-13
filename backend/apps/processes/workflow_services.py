@@ -39,6 +39,7 @@ def update_workflow(*, workflow, name=None, description=None, active=None):
                 authorized_sector=transition.authorized_sector,
                 authorized_function=transition.authorized_function,
                 requires_note=transition.requires_note, requires_attachment=transition.requires_attachment,
+                required_document_role=transition.required_document_role,
                 is_return=transition.is_return, active=transition.active,
             )
             for transition in current.stages.all().prefetch_related("outgoing_transitions")

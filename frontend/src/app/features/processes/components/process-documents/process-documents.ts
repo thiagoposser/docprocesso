@@ -24,6 +24,7 @@ import { ProcessService } from '../../services/process.service';
             <div class="col-md-5"><label class="form-label" for="process-document-title">Título</label><input id="process-document-title" class="form-control" maxlength="200" formControlName="title"></div>
             <div class="col-md-4"><label class="form-label" for="process-document-category">Categoria</label><select id="process-document-category" class="form-select" formControlName="category"><option value="">Selecione</option>@for (category of categories(); track category.id) { <option [value]="category.id">{{ category.name }}</option> }</select></div>
             <div class="col-md-3"><label class="form-label" for="process-document-files">Anexos</label><input id="process-document-files" class="form-control" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.png,.jpg,.jpeg" (change)="selectFiles($event)"></div>
+            <div class="col-md-4"><label class="form-label" for="process-document-role">Papel documental</label><select id="process-document-role" class="form-select" formControlName="role"><option value="GENERAL">Documento geral</option>@if (canManageReceipts()) { <option value="PAYMENT_RECEIPT">Comprovante de pagamento</option> }</select></div>
             <div class="col-12"><label class="form-label" for="process-document-description">Descrição</label><textarea id="process-document-description" class="form-control" rows="2" formControlName="description"></textarea></div>
           </div>
           @if (selectedNames()) { <small class="d-block text-body-secondary mt-2">Selecionados: {{ selectedNames() }}</small> }
@@ -34,9 +35,9 @@ import { ProcessService } from '../../services/process.service';
       <div class="list-group list-group-flush">
         @for (item of documents(); track item.id) {
           <article class="list-group-item p-3">
-            <div class="d-flex justify-content-between gap-3"><div><strong>{{ item.title }}</strong><small class="d-block text-body-secondary">{{ item.category_name }} · {{ item.updated_at | date:'short' }}</small></div><span class="badge text-bg-light border align-self-start">{{ item.attachments.length }} anexo(s)</span></div>
+            <div class="d-flex justify-content-between gap-3"><div><strong>{{ item.title }}</strong><small class="d-block text-body-secondary">{{ item.category_name }} · {{ item.role === 'PAYMENT_RECEIPT' ? 'Comprovante de pagamento' : 'Documento geral' }} · {{ item.updated_at | date:'short' }}</small></div><span class="badge text-bg-light border align-self-start">{{ item.attachments.length }} anexo(s)</span></div>
             @if (item.description) { <p class="small text-body-secondary mt-2 mb-2">{{ item.description }}</p> }
-            <div class="d-flex flex-column gap-2">@for (attachment of item.attachments; track attachment.id) { <div class="d-flex justify-content-between align-items-center border rounded p-2" [class.opacity-50]="!attachment.active"><span class="small">{{ attachment.file_name || (attachment.source_type === 'external_url' ? 'Link externo' : 'Arquivo') }} @if (!attachment.active) { <span class="text-danger">(removido)</span> }</span><div>@if (attachment.active) { <button class="btn btn-sm btn-outline-primary me-1" type="button" (click)="download(attachment.id, attachment.file_name)">Abrir</button>@if (canChange()) { <button class="btn btn-sm btn-outline-secondary" type="button" (click)="deactivate(attachment.id)">Inativar</button> } }</div></div> }</div>
+            <div class="d-flex flex-column gap-2">@for (attachment of item.attachments; track attachment.id) { <div class="d-flex justify-content-between align-items-center border rounded p-2" [class.opacity-50]="!attachment.active"><span class="small">{{ attachment.file_name || (attachment.source_type === 'external_url' ? 'Link externo' : 'Arquivo') }} @if (attachment.stage_name) { <small class="d-block text-body-secondary">Incluído em {{ attachment.stage_name }} · {{ attachment.sector_name }}{{ attachment.function_name ? ' · ' + attachment.function_name : '' }}</small> } @if (!attachment.active) { <span class="text-danger">(removido)</span> }</span><div>@if (attachment.active) { <button class="btn btn-sm btn-outline-primary me-1" type="button" (click)="download(attachment.id, attachment.file_name)">Abrir</button>@if (canChange()) { <button class="btn btn-sm btn-outline-secondary" type="button" (click)="deactivate(attachment.id)">Inativar</button> } }</div></div> }</div>
           </article>
         } @empty { @if (!loading()) { <div class="p-4 text-center text-body-secondary">Nenhum documento vinculado.</div> } }
       </div>
@@ -62,20 +63,22 @@ export class ProcessDocuments implements OnInit {
   readonly form = new FormGroup({
     title: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
     description: new FormControl('', { nonNullable: true }),
-    category: new FormControl('', { nonNullable: true, validators: [Validators.required] })
+    category: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+    role: new FormControl<'GENERAL' | 'PAYMENT_RECEIPT'>('GENERAL', { nonNullable: true })
   });
 
   ngOnInit() { this.load(); this.documentApi.categories().subscribe({ next: page => this.categories.set(page.results) }); }
   private sector() { return this.process().current_sector || this.process().origin_sector; }
   canAdd() { return !['COMPLETED', 'CANCELLED', 'ARCHIVED'].includes(this.process().status) && this.auth.canInSector('processes.view_administrativeprocess', this.sector()) && this.auth.can('documents.add_document') && this.auth.can('documents.add_attachment'); }
   canChange() { return this.auth.canInSector('processes.view_administrativeprocess', this.sector()) && this.auth.can('documents.change_document') && this.auth.can('documents.change_attachment'); }
+  canManageReceipts() { return this.auth.can('payments.view_payment') && this.auth.can('payments.view_financial_data') && this.auth.can('payments.manage_payment_receipt'); }
   selectFiles(event: Event) { this.files = Array.from((event.target as HTMLInputElement).files || []); this.selectedNames.set(this.files.map(file => file.name).join(', ')); }
   submit() {
     this.form.markAllAsTouched();
     const invalidFile = this.files.find(file => file.size > 10 * 1024 * 1024 || !/\.(pdf|docx?|xlsx?|txt|png|jpe?g)$/i.test(file.name));
     if (this.form.invalid || !this.files.length || invalidFile || this.saving()) { this.submitError.set(invalidFile ? `O arquivo ${invalidFile.name} possui extensão ou tamanho inválido.` : 'Informe título, categoria e ao menos um anexo.'); return; }
     const value = this.form.getRawValue(); this.saving.set(true); this.submitError.set('');
-    this.api.createDocument(this.process().id, { title: value.title.trim(), description: value.description.trim(), category: Number(value.category) }).pipe(
+    this.api.createDocument(this.process().id, { title: value.title.trim(), description: value.description.trim(), category: Number(value.category), role: value.role }).pipe(
       concatMap(document => from(this.files).pipe(concatMap(file => this.api.addAttachment(document.id, file)), toArray())), finalize(() => this.saving.set(false))
     ).subscribe({ next: () => { this.form.reset(); this.files = []; this.selectedNames.set(''); this.showForm.set(false); this.load(); this.changed.emit(); }, error: () => { this.submitError.set('Parte do envio pode ter sido concluída. Atualize o dossiê antes de tentar novamente.'); this.load(); this.changed.emit(); } });
   }

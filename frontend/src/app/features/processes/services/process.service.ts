@@ -36,7 +36,7 @@ export class ProcessService {
   assign(id: number, assignee: number, version: number) { return this.http.post<ProcessItem>(`/api/processes/${id}/assign/`, { assignee, version }); }
   timeline(id: number, page = 1) { return this.http.get<ProcessTimelinePage>(`/api/processes/${id}/timeline/`, { params: { page } }); }
   documents(id: number) { return this.http.get<ProcessDocumentPage>(`/api/processes/${id}/documents/`); }
-  createDocument(id: number, payload: { title: string; description: string; category: number }) { return this.http.post<ProcessDocument>(`/api/processes/${id}/documents/`, payload); }
+  createDocument(id: number, payload: { title: string; description: string; category: number; role: 'GENERAL' | 'PAYMENT_RECEIPT' }) { return this.http.post<ProcessDocument>(`/api/processes/${id}/documents/`, payload); }
   addAttachment(documentId: number, file: File) { const payload = new FormData(); payload.set('file', file); return this.http.post<ProcessAttachment>(`/api/documents/${documentId}/attachments/`, payload); }
   downloadAttachment(id: number) { return this.http.get(`/api/attachments/${id}/download/`, { responseType: 'blob' }); }
   deactivateAttachment(id: number) { return this.http.patch<ProcessAttachment>(`/api/attachments/${id}/deactivate/`, {}); }
