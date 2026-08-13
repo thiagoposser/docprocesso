@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { adminGuard, auditGuard, authGuard, paymentAddGuard, paymentChangeGuard, paymentViewGuard, processAddGuard, processChangeGuard, processViewGuard, reportsGuard, sectorGuard } from './core/guards/auth.guard';
+import { adminGuard, auditGuard, authGuard, organizationalFunctionGuard, paymentAddGuard, paymentChangeGuard, paymentViewGuard, processAddGuard, processChangeGuard, processViewGuard, reportsGuard, sectorGuard, unitGuard } from './core/guards/auth.guard';
 import { authResolver } from './core/resolvers/auth.resolver';
 
 export const routes: Routes = [
@@ -36,6 +36,17 @@ export const routes: Routes = [
           { path: 'setores', title: 'Setores', canActivate: [sectorGuard], data: { breadcrumb: 'Setores' }, loadComponent: () => import('./features/sectors/pages/sector-list/sector-list').then(m => m.SectorList) },
           { path: 'setores/novo', title: 'Novo setor', canActivate: [sectorGuard], data: { breadcrumb: 'Novo setor' }, loadComponent: () => import('./features/sectors/pages/sector-form/sector-form').then(m => m.SectorForm) },
           { path: 'setores/:id/editar', title: 'Editar setor', canActivate: [sectorGuard], data: { breadcrumb: 'Editar setor' }, loadComponent: () => import('./features/sectors/pages/sector-form/sector-form').then(m => m.SectorForm) },
+          { path: 'estrutura', pathMatch: 'full', redirectTo: 'estrutura/unidades' },
+          { path: 'estrutura/unidades', title: 'Unidades', canActivate: [unitGuard], data: { breadcrumb: 'Unidades' }, loadComponent: () => import('./features/sectors/pages/unit-list/unit-list').then(m => m.UnitList) },
+          { path: 'estrutura/unidades/nova', title: 'Nova unidade', canActivate: [unitGuard], data: { breadcrumb: 'Nova unidade' }, loadComponent: () => import('./features/sectors/pages/unit-form/unit-form').then(m => m.UnitForm) },
+          { path: 'estrutura/unidades/:id/editar', title: 'Editar unidade', canActivate: [unitGuard], data: { breadcrumb: 'Editar unidade' }, loadComponent: () => import('./features/sectors/pages/unit-form/unit-form').then(m => m.UnitForm) },
+          { path: 'estrutura/setores', title: 'Setores', canActivate: [sectorGuard], data: { breadcrumb: 'Setores' }, loadComponent: () => import('./features/sectors/pages/sector-list/sector-list').then(m => m.SectorList) },
+          { path: 'estrutura/setores/novo', title: 'Novo setor', canActivate: [sectorGuard], data: { breadcrumb: 'Novo setor' }, loadComponent: () => import('./features/sectors/pages/sector-form/sector-form').then(m => m.SectorForm) },
+          { path: 'estrutura/setores/:id/editar', title: 'Editar setor', canActivate: [sectorGuard], data: { breadcrumb: 'Editar setor' }, loadComponent: () => import('./features/sectors/pages/sector-form/sector-form').then(m => m.SectorForm) },
+          { path: 'estrutura/funcoes', title: 'Funções', canActivate: [organizationalFunctionGuard], data: { breadcrumb: 'Funções' }, loadComponent: () => import('./features/sectors/pages/function-list/function-list').then(m => m.FunctionList) },
+          { path: 'estrutura/funcoes/nova', title: 'Nova função', canActivate: [organizationalFunctionGuard], data: { breadcrumb: 'Nova função' }, loadComponent: () => import('./features/sectors/pages/function-form/function-form').then(m => m.FunctionForm) },
+          { path: 'estrutura/funcoes/:id/editar', title: 'Editar função', canActivate: [organizationalFunctionGuard], data: { breadcrumb: 'Editar função' }, loadComponent: () => import('./features/sectors/pages/function-form/function-form').then(m => m.FunctionForm) },
+          { path: 'estrutura/vinculos', title: 'Vínculos organizacionais', canActivate: [adminGuard], data: { breadcrumb: 'Vínculos' }, loadComponent: () => import('./features/administration/users/user-list/user-list').then(m => m.UserList) },
           { path: 'auditoria', title: 'Auditoria', canActivate: [auditGuard], data: { breadcrumb: 'Auditoria' }, loadComponent: () => import('./features/administration/audit/pages/audit-list/audit-list').then(m => m.AuditList) },
           { path: 'auditoria/:id', title: 'Detalhes da auditoria', canActivate: [auditGuard], data: { breadcrumb: 'Detalhes da auditoria' }, loadComponent: () => import('./features/administration/audit/pages/audit-detail/audit-detail').then(m => m.AuditDetail) }
         ]

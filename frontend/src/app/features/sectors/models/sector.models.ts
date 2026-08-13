@@ -6,12 +6,14 @@ export interface OrganizationalUnit {
 }
 
 export type OrganizationalUnitPage = PaginatedResponse<OrganizationalUnit>;
+export interface OrganizationalUnitPayload { name: string; acronym: string; description: string; parent: number | null; active: boolean; }
 
 export interface OrganizationalFunction {
   id: number; name: string; code: string; description: string; active: boolean; created_at: string; updated_at: string;
 }
 
 export type OrganizationalFunctionPage = PaginatedResponse<OrganizationalFunction>;
+export interface OrganizationalFunctionPayload { name: string; code: string; description: string; active: boolean; }
 
 export interface Sector {
   id: number; unit: number | null; unit_name: string | null; unit_acronym: string | null;
@@ -27,4 +29,4 @@ export interface SectorTreeNode {
 
 export interface FlatSectorNode extends SectorTreeNode { level: number; }
 export type SectorPage = PaginatedResponse<Sector>;
-export interface SectorPayload { unit: number | null; name: string; code: string | null; parent: number | null; manager: number | null; active: boolean; }
+export interface SectorPayload { unit: number | null; name: string; code: string | null; parent: number | null; manager?: number | null; active: boolean; }
